@@ -1,6 +1,8 @@
 """
 Quick script to seed today's puzzle via the API.
-Usage: python backend/scripts/seed_puzzle.py
+Usage:
+  python backend/scripts/seed_puzzle.py
+  API_URL=https://your-app.railway.app python backend/scripts/seed_puzzle.py
 """
 
 import json
@@ -58,7 +60,7 @@ puzzle = {
 
 body = json.dumps(puzzle).encode()
 req = urllib.request.Request(
-    "http://localhost:8000/api/puzzle",
+    "https://machrozot.up.railway.app/api/puzzle",
     data=body,
     headers={"Content-Type": "application/json"},
     method="POST",
