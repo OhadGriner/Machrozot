@@ -12,6 +12,7 @@ The original scaffold prompt is preserved in `claude.md`. If the project hasn't 
 
 - **Frontend:** React + TypeScript, Vite, React Router v6, Zustand, Tailwind CSS
 - **Backend:** Python 3.12, FastAPI (all routes async), SQLAlchemy with `asyncpg`, Alembic, python-jose + passlib (JWT), slowapi, APScheduler, Redis
+- **Package manager:** `uv` (replaces pip/virtualenv — use `uv run`, `uv add`, `uv sync`)
 - **Database:** PostgreSQL 16
 - **Dev:** Docker Compose (db + redis + backend + frontend)
 
@@ -21,14 +22,20 @@ The original scaffold prompt is preserved in `claude.md`. If the project hasn't 
 # Start all services
 docker compose up
 
+# Backend setup (from backend/)
+uv sync
+
 # Backend only (from backend/)
-uvicorn app.main:app --reload
+uv run uvicorn app.main:app --reload
 
 # Run Alembic migrations (from backend/)
-alembic upgrade head
+uv run alembic upgrade head
 
 # Backend tests (from backend/)
-pytest
+uv run pytest
+
+# Add a dependency (from backend/)
+uv add <package>
 
 # Frontend dev server (from frontend/)
 npm run dev
