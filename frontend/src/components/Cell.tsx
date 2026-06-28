@@ -3,8 +3,9 @@ import type { CellState } from '../store/gameStore'
 interface CellProps {
   letter: string
   state: CellState
+  row: number
+  col: number
   onPointerDown: () => void
-  onPointerEnter: () => void
 }
 
 const stateStyles: Record<CellState, string> = {
@@ -15,11 +16,12 @@ const stateStyles: Record<CellState, string> = {
   hint:     'bg-orange-300 border-orange-300 text-white',
 }
 
-export default function Cell({ letter, state, onPointerDown, onPointerEnter }: CellProps) {
+export default function Cell({ letter, state, row, col, onPointerDown }: CellProps) {
   return (
     <div
       onPointerDown={onPointerDown}
-      onPointerEnter={onPointerEnter}
+      data-row={row}
+      data-col={col}
       className={`
         flex items-center justify-center
         w-12 h-12 rounded-full border-2
