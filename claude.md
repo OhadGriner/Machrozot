@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Hebrew Strands** — a full-stack Hebrew clone of NYT Strands. Players find themed words in a 6×8 letter grid where every cell is used exactly once. A special "spangram" word spans the board and reveals the theme.
+**Hebrew Strands** — a full-stack Hebrew clone of NYT Strands. Players find themed words in a 8×6 letter grid where every cell is used exactly once. A special "spangram" word spans the board and reveals the theme.
 
 The original scaffold prompt is preserved in `claude.md`. If the project hasn't been built yet, scaffold it per that spec (see Implementation Order below).
 

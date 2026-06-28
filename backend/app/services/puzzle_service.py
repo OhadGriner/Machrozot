@@ -48,8 +48,14 @@ async def create_puzzle(db: AsyncSession, data: PuzzleCreate) -> Puzzle:
     await db.flush()  # get puzzle.id before committing
 
     if data.scheduled_date:
-        schedule = DailySchedule(puzzle_id=puzzle.id, date=data.scheduled_date)
-        db.add(schedule)
+        existing = await db.execute(
+            select(DailySchedule).where(DailySchedule.date == data.scheduled_date)
+        )
+        schedule = existing.scalar_one_or_none()
+        if schedule:
+            schedule.puzzle_id = puzzle.id
+        else:
+            db.add(DailySchedule(puzzle_id=puzzle.id, date=data.scheduled_date))
 
     await db.commit()
     await db.refresh(puzzle)

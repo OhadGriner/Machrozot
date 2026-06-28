@@ -1,38 +1,57 @@
 """
 Quick script to seed today's puzzle via the API.
-Usage: uv run --project backend python scripts/seed_puzzle.py
+Usage: python backend/scripts/seed_puzzle.py
 """
 
 import json
 import urllib.request
 from datetime import date
 
-# A small test puzzle. Theme: פירות (fruits)
-# Grid is 6 rows × 8 cols of Hebrew consonants (no nikud, no final forms)
+# Test puzzle. Theme: פירות (fruits)
+# Grid is 8 rows × 6 cols of Hebrew consonants (no nikud, no final forms)
+#
+#   ת פ ו ח כ ת
+#   א ג ס מ נ ג
+#   ו ל י מ ו נ
+#   א ב ט י ח ע
+#   נ ב א נ נ ה
+#   מ נ ג ו ל ד
+#   ש ז ר ב נ א
+#   ס ק י ו י ב
+#
+# spangram: תפוחכת (col 0-5, row 0)
+# words:
+#   אגס  → (1,0),(1,1),(1,2)
+#   לימונ → (2,1),(2,2),(2,3),(2,4),(2,5)  → note: base form נ not ן
+#   אבטיח → (3,1),(3,2),(3,3),(3,4),(3,5) wait - let me recalculate
+#   מנגו  → (5,0),(5,1),(5,2),(5,3)
+
 puzzle = {
     "theme": "פירות",
     "grid": [
-        ["ת", "פ", "ו", "ח", "כ", "ת", "ו", "מ"],
-        ["א", "ג", "ס", "ל", "י", "מ", "ו", "נ"],
-        ["ע", "נ", "ב", "א", "ב", "ט", "י", "ח"],
-        ["מ", "נ", "ג", "ו", "ל", "ד", "ש", "ז"],
-        ["ר", "ב", "נ", "א", "נ", "ה", "פ", "ר"],
-        ["ס", "ק", "י", "ו", "י", "ב", "ל", "ה"],
+        ["ת", "פ", "ו", "ח", "כ", "ת"],
+        ["א", "ג", "ס", "מ", "נ", "ג"],
+        ["ו", "ל", "י", "מ", "ו", "נ"],
+        ["א", "ב", "ט", "י", "ח", "ע"],
+        ["נ", "ב", "א", "נ", "נ", "ה"],
+        ["מ", "נ", "ג", "ו", "ל", "ד"],
+        ["ש", "ז", "ר", "ב", "נ", "א"],
+        ["ס", "ק", "י", "ו", "י", "ב"],
     ],
-    # spangram: תפוחכתום (orange-colored apple — spans rows 0-1)
+    # spangram: תפוחכת — row 0, all 6 cols
     "spangram_cells": [
-        {"row": 0, "col": 0}, {"row": 0, "col": 1}, {"row": 0, "col": 2}, {"row": 0, "col": 3},
-        {"row": 0, "col": 4}, {"row": 0, "col": 5}, {"row": 0, "col": 6}, {"row": 0, "col": 7},
+        {"row": 0, "col": 0}, {"row": 0, "col": 1}, {"row": 0, "col": 2},
+        {"row": 0, "col": 3}, {"row": 0, "col": 4}, {"row": 0, "col": 5},
     ],
     "word_cells": [
-        # תפוח (apple): row 0 cols 0-3
-        [{"row": 0, "col": 0}, {"row": 0, "col": 1}, {"row": 0, "col": 2}, {"row": 0, "col": 3}],
         # אגס (pear): row 1 cols 0-2
         [{"row": 1, "col": 0}, {"row": 1, "col": 1}, {"row": 1, "col": 2}],
-        # לימון (lemon): row 1 cols 3-7
-        [{"row": 1, "col": 3}, {"row": 1, "col": 4}, {"row": 1, "col": 5}, {"row": 1, "col": 6}, {"row": 1, "col": 7}],
-        # אבטיח (watermelon): row 2 cols 3-7
-        [{"row": 2, "col": 3}, {"row": 2, "col": 4}, {"row": 2, "col": 5}, {"row": 2, "col": 6}, {"row": 2, "col": 7}],
+        # לימונ (lemon): row 2 cols 1-5
+        [{"row": 2, "col": 1}, {"row": 2, "col": 2}, {"row": 2, "col": 3}, {"row": 2, "col": 4}, {"row": 2, "col": 5}],
+        # אבטיח (watermelon): row 3 cols 0-4
+        [{"row": 3, "col": 0}, {"row": 3, "col": 1}, {"row": 3, "col": 2}, {"row": 3, "col": 3}, {"row": 3, "col": 4}],
+        # מנגו (mango): row 5 cols 0-3
+        [{"row": 5, "col": 0}, {"row": 5, "col": 1}, {"row": 5, "col": 2}, {"row": 5, "col": 3}],
     ],
     "scheduled_date": str(date.today()),
 }

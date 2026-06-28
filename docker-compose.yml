@@ -1,4 +1,4 @@
-services:
+services:Uncaught SyntaxError: The requested module '/src/store/gameStore.ts?t=1782664353713' does not provide an export named 'CellPosition' (at useSelection.ts:2:24)
   db:
     image: postgres:16
     environment:
@@ -18,6 +18,13 @@ services:
       - .env
     volumes:
       - ./backend:/app
+    depends_on:
+      - db
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
     depends_on:
       - db
 
