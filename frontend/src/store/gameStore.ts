@@ -8,11 +8,17 @@ export interface CellPosition {
   col: number
 }
 
+export interface WordLine {
+  cells: CellPosition[]
+  state: 'found' | 'spangram'
+}
+
 interface GameState {
   puzzle: PuzzlePublic | null
   selectedCells: CellPosition[]
   cellStates: Record<string, CellState>
   foundWords: string[]
+  foundWordLines: WordLine[]
   nonThemeCount: number
   hintsEarned: number
   hintsUsed: number
@@ -34,13 +40,14 @@ export const useGameStore = create<GameState>((set, get) => ({
   selectedCells: [],
   cellStates: {},
   foundWords: [],
+  foundWordLines: [],
   nonThemeCount: 0,
   hintsEarned: 0,
   hintsUsed: 0,
   isComplete: false,
 
   setPuzzle: (puzzle) =>
-    set({ puzzle, selectedCells: [], cellStates: {}, foundWords: [], isComplete: false }),
+    set({ puzzle, selectedCells: [], cellStates: {}, foundWords: [], foundWordLines: [], isComplete: false }),
 
   selectCell: (cell) => {
     const { selectedCells, cellStates } = get()
@@ -92,10 +99,12 @@ export const useGameStore = create<GameState>((set, get) => ({
       const updatedStates = { ...cellStates }
       selectedCells.forEach((c) => { updatedStates[cellKey(c)] = newState })
       const updatedFoundWords = [...foundWords, selectedWord]
+      const { foundWordLines } = get()
       const totalWords = puzzle.words.length + 1 // words + spangram
       set({
         cellStates: updatedStates,
         foundWords: updatedFoundWords,
+        foundWordLines: [...foundWordLines, { cells: [...selectedCells], state: newState }],
         selectedCells: [],
         isComplete: updatedFoundWords.length === totalWords,
       })
