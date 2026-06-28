@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 1 week
     cors_origins: list[str] = ["http://localhost:5173"]
+    admin_password: str  # required — set ADMIN_PASSWORD env var, never commit a value
 
 
 settings = Settings()
