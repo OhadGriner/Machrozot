@@ -25,7 +25,7 @@ function toPoints(cells: CellPosition[], containerRect: DOMRect) {
 
 const LINE_COLOR: Record<WordLine['state'], string> = {
   found: '#4ade80',
-  spangram: '#facc15',
+  spangram: '#c084fc',
 }
 
 export default function SelectionLine({ selectedCells, foundWordLines, containerRef }: Props) {
@@ -41,7 +41,7 @@ export default function SelectionLine({ selectedCells, foundWordLines, container
   const selectionPoints = toPoints(selectedCells, containerRect)
   const polylineProps = {
     fill: 'none',
-    strokeWidth: 6,
+    strokeWidth: 10,
     strokeLinecap: 'round' as const,
     strokeLinejoin: 'round' as const,
   }
@@ -64,7 +64,7 @@ export default function SelectionLine({ selectedCells, foundWordLines, container
       {selectionPoints.length >= 2 && (
         <polyline
           points={selectionPoints.map((p) => `${p.x},${p.y}`).join(' ')}
-          stroke="#60a5fa"
+          stroke="#eedccd"
           opacity="0.8"
           {...polylineProps}
         />

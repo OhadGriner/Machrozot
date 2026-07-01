@@ -51,23 +51,9 @@ export default function GamePage() {
 
       <Grid />
 
-      <div className="flex flex-col items-center gap-2 w-full max-w-sm">
-        <p className="text-sm text-gray-400 font-medium">
-          נמצאו {foundWords.length} מתוך {puzzle.word_count + 1} מילים
-        </p>
-        <div className="flex flex-wrap gap-2 justify-center">
-          {foundWords.map((word) => (
-            <span
-              key={word}
-              className={`px-3 py-1 rounded-full text-sm font-bold text-white ${
-                word === puzzle.spangram ? 'bg-yellow-400' : 'bg-green-400'
-              }`}
-            >
-              {word}
-            </span>
-          ))}
-        </div>
-      </div>
+      <p className="text-sm text-gray-400 font-medium">
+        נמצאו {foundWords.length} מתוך {puzzle.word_count + 1} מילים
+      </p>
     </div>
   )
 }
