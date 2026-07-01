@@ -39,6 +39,17 @@ async def test_create_puzzle_returns_derived_words(api: AsyncClient, puzzle_payl
     assert len(data["grid"]) == 6
 
 
+async def test_puzzle_response_includes_cell_paths_for_position_validation(api: AsyncClient, puzzle_payload):
+    # The client validates a selection by exact cell position + order (not just
+    # spelling), so the answer paths must be present in the response — otherwise
+    # a player could substitute one occurrence of a repeated letter for another
+    # and still have their selection accepted.
+    response = await api.post("/api/puzzle", json=puzzle_payload)
+    data = response.json()
+    assert data["spangram_cells"] == puzzle_payload["spangram_cells"]
+    assert data["word_cells"] == puzzle_payload["word_cells"]
+
+
 async def test_get_puzzle_by_id(api: AsyncClient, puzzle_payload):
     created = (await api.post("/api/puzzle", json=puzzle_payload)).json()
 

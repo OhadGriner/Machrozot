@@ -78,8 +78,8 @@ strands-he/
 
 ## API Contract
 
-- `GET /api/puzzle/today` — **never** include `word_cells` in the response (exposes answers)
-- Word validation is client-side: concatenate selected letters → strip nikud → normalize finals → compare against word list
+- `GET /api/puzzle/today` — includes `spangram_cells`/`word_cells` (the ordered answer paths), matching what real NYT Strands ships to the client (its board JSON is fully inspectable too — solver/spoiler tools rely on this). Answer *strings* (`spangram`, `words`) were already sent before this; withholding only positions gave a false sense of security while still letting a repeated letter be selected from the wrong cell and accepted.
+- Word validation is client-side, by **position and order**: compare the selected `{row, col}` path against `puzzle.spangram_cells` / `puzzle.word_cells` exactly (not reversed) — not by concatenating letters and comparing strings. String-only comparison is exploitable whenever a letter repeats on the board.
 - The session PATCH only confirms progress; it does not re-validate words server-side
 
 ## Core Game Logic

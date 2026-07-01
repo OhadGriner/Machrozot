@@ -1,12 +1,9 @@
 import { create } from 'zustand'
-import type { PuzzlePublic } from '../api/client'
+import type { CellPosition, PuzzlePublic } from '../api/client'
+
+export type { CellPosition }
 
 export type CellState = 'default' | 'selected' | 'found' | 'spangram' | 'hint'
-
-export interface CellPosition {
-  row: number
-  col: number
-}
 
 export interface WordLine {
   cells: CellPosition[]
@@ -33,6 +30,13 @@ interface GameState {
 
 function cellKey(cell: CellPosition) {
   return `${cell.row}-${cell.col}`
+}
+
+// Position-and-order match against the real answer path — a spelled-out
+// string match isn't enough, since a repeated letter could let a player
+// substitute the wrong (but identically-lettered) cell.
+function pathsEqual(a: CellPosition[], b: CellPosition[]): boolean {
+  return a.length === b.length && a.every((cell, i) => cell.row === b[i].row && cell.col === b[i].col)
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -87,14 +91,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       return
     }
 
-    const selectedWord = selectedCells
-      .map((c) => puzzle.grid[c.row][c.col])
-      .join('')
-
-    const isSpangram = selectedWord === puzzle.spangram
-    const isThemeWord = puzzle.words.includes(selectedWord)
+    const isSpangram = pathsEqual(selectedCells, puzzle.spangram_cells)
+    const isThemeWord = !isSpangram && puzzle.word_cells.some((cells) => pathsEqual(selectedCells, cells))
 
     if (isSpangram || isThemeWord) {
+      const selectedWord = selectedCells.map((c) => puzzle.grid[c.row][c.col]).join('')
       const newState: CellState = isSpangram ? 'spangram' : 'found'
       const updatedStates = { ...cellStates }
       selectedCells.forEach((c) => { updatedStates[cellKey(c)] = newState })

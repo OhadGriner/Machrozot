@@ -19,6 +19,8 @@ def _to_public(puzzle: Puzzle) -> PuzzlePublic:
         word_count=len(words),
         spangram=spangram,
         words=words,
+        spangram_cells=puzzle.spangram_cells,
+        word_cells=puzzle.word_cells,
     )
 
 

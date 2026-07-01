@@ -1,3 +1,8 @@
+export interface CellPosition {
+  row: number
+  col: number
+}
+
 export interface PuzzlePublic {
   id: number
   theme: string
@@ -5,6 +10,8 @@ export interface PuzzlePublic {
   word_count: number
   spangram: string
   words: string[]
+  spangram_cells: CellPosition[]
+  word_cells: CellPosition[][]
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''

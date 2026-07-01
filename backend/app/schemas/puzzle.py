@@ -24,7 +24,9 @@ class PuzzlePublic(BaseModel):
     theme: str
     grid: list[list[str]]
     word_count: int                 # number of theme words (not including spangram)
-    spangram: str                   # derived word string — reveals theme span, not position
-    words: list[str]                # derived word strings for client-side validation
+    spangram: str                   # derived word string, for display (e.g. hint UI)
+    words: list[str]                # derived word strings, for display
+    spangram_cells: list[CellPosition]   # ordered path — client validates selection by position+order
+    word_cells: list[list[CellPosition]]
 
     model_config = {"from_attributes": True}

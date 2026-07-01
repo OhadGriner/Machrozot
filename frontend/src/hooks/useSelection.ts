@@ -19,7 +19,7 @@ function cellKey(cell: CellPosition) {
 export function useSelection() {
   const isPointerDown = useRef(false)
   const movedDuringStroke = useRef(false)
-  const { selectCell, clearSelection, submitSelection, selectedCells } = useGameStore()
+  const { selectCell, clearSelection, submitSelection } = useGameStore()
 
   const onCellPointerDown = useCallback(
     (cell: CellPosition) => {
@@ -55,13 +55,14 @@ export function useSelection() {
   const onCellPointerEnter = useCallback(
     (cell: CellPosition) => {
       if (!isPointerDown.current) return
-      const last = selectedCells.at(-1)
+      const { selectedCells: current } = useGameStore.getState()
+      const last = current.at(-1)
       if (last && isAdjacent(last, cell) && cellKey(last) !== cellKey(cell)) {
         selectCell(cell)
         movedDuringStroke.current = true
       }
     },
-    [selectCell, selectedCells],
+    [selectCell],
   )
 
   const onPointerUp = useCallback(() => {

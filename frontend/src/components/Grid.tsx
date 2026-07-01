@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { useSelection } from '../hooks/useSelection'
 import Cell from './Cell'
@@ -9,6 +9,15 @@ export default function Grid() {
   const { puzzle, cellStates, selectedCells, foundWordLines } = useGameStore()
   const { onCellPointerDown, onCellPointerEnter, onPointerUp } = useSelection()
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Listen on window (not just the grid container) so a drag that briefly
+  // overshoots the grid's edge — very common with real mouse/finger movement,
+  // especially along an edge row — doesn't get cut short: the gesture only
+  // ends on the actual pointer release, wherever it happens.
+  useEffect(() => {
+    window.addEventListener('pointerup', onPointerUp)
+    return () => window.removeEventListener('pointerup', onPointerUp)
+  }, [onPointerUp])
 
   if (!puzzle) return null
 
@@ -33,8 +42,6 @@ export default function Grid() {
         <div
           ref={containerRef}
           className="flex flex-col items-center gap-2 select-none touch-none"
-          onPointerUp={onPointerUp}
-          onPointerLeave={onPointerUp}
           onPointerMove={handlePointerMove}
         >
           {puzzle.grid.map((row, rowIndex) => (
