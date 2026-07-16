@@ -1,0 +1,17 @@
+# Future features backlog (not for commit)
+FUTURE.md
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.uv/
+
+# Env files
+.env
+
+# Frontend
+node_modules/
+dist/
+.DS_Store

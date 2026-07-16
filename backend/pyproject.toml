@@ -1,0 +1,34 @@
+[project]
+name = "machrozot-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "python-jose[cryptography]>=3.3",
+    "passlib[bcrypt]>=1.7",
+    "slowapi>=0.1.9",
+    "apscheduler>=3.10",
+    "redis[asyncio]>=5.0",
+    "pydantic-settings>=2.0",
+    "python-multipart>=0.0.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "aiosqlite>=0.22.1",
+    "tqdm>=4.68.4",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+addopts = "-m 'not slow'"
+markers = [
+    "slow: exercises generate_grid with intentionally hard content (heavy letter reuse, real production data) — can take 1-2 minutes per test with the current backtracking algorithm. Excluded by default; run with `pytest -m slow` or `pytest -p no:cacheprovider -o addopts=''`.",
+]
