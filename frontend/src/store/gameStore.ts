@@ -11,6 +11,11 @@ export interface WordLine {
   state: 'found' | 'megaMachrozet' | 'hint'
 }
 
+export interface SolveStep {
+  type: 'word' | 'megaMachrozet'
+  hinted: boolean
+}
+
 interface GameState {
   puzzle: PuzzlePublic | null
   selectedCells: CellPosition[]
@@ -23,6 +28,7 @@ interface GameState {
   hintsEarned: number
   hintsUsed: number
   isComplete: boolean
+  solveOrder: SolveStep[]
 
   setPuzzle: (puzzle: PuzzlePublic) => void
   selectCell: (cell: CellPosition) => void
@@ -54,11 +60,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   hintsEarned: 0,
   hintsUsed: 0,
   isComplete: false,
+  solveOrder: [],
 
   setPuzzle: (puzzle) =>
     set({
       puzzle, selectedCells: [], cellStates: {}, foundWords: [], foundWordLines: [],
-      isComplete: false,
+      isComplete: false, solveOrder: [],
       hintWordLines: [], foundBonusWords: [], nonThemeCount: 0, hintsEarned: 0, hintsUsed: 0,
     }),
 
@@ -109,13 +116,18 @@ export const useGameStore = create<GameState>((set, get) => ({
       const updatedStates = { ...cellStates }
       selectedCells.forEach((c) => { updatedStates[cellKey(c)] = newState })
       const updatedFoundWords = [...foundWords, selectedWord]
-      const { foundWordLines, hintWordLines } = get()
+      const { foundWordLines, hintWordLines, solveOrder } = get()
+      const wasHinted = hintWordLines.some((line) => pathsEqual(line.cells, selectedCells))
       const totalWords = puzzle.words.length + 1 // words + mega machrozet
       set({
         cellStates: updatedStates,
         foundWords: updatedFoundWords,
         foundWordLines: [...foundWordLines, { cells: [...selectedCells], state: newState }],
         hintWordLines: hintWordLines.filter((line) => !pathsEqual(line.cells, selectedCells)),
+        solveOrder: [
+          ...solveOrder,
+          { type: isMegaMachrozet ? 'megaMachrozet' : 'word', hinted: wasHinted },
+        ],
         selectedCells: [],
         isComplete: updatedFoundWords.length === totalWords,
       })

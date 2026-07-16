@@ -1,7 +1,9 @@
 import { useGameStore } from '../store/gameStore'
 
 export default function CurrentWordBanner() {
-  const { puzzle, selectedCells } = useGameStore()
+  const { puzzle, selectedCells, isComplete } = useGameStore()
+
+  if (isComplete) return null
 
   const currentWord = puzzle ? selectedCells.map((c) => puzzle.grid[c.row][c.col]).join('') : ''
 

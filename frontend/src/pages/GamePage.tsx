@@ -4,12 +4,24 @@ import { api } from '../api/client'
 import { useGameStore } from '../store/gameStore'
 import Grid from '../components/Grid'
 import HintBar from '../components/HintBar'
+import Fireworks from '../components/Fireworks'
+import { buildShareText } from '../utils/shareUtils'
 
 export default function GamePage() {
   const { date } = useParams<{ date?: string }>()
-  const { puzzle, setPuzzle, foundWords, isComplete } = useGameStore()
+  const { puzzle, setPuzzle, foundWords, isComplete, solveOrder } = useGameStore()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
+  const [showFireworks, setShowFireworks] = useState(false)
+
+  const handleShare = async () => {
+    if (!puzzle) return
+    const text = buildShareText(puzzle.theme, solveOrder)
+    await navigator.clipboard.writeText(text)
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 2000)
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -20,6 +32,13 @@ export default function GamePage() {
       .catch(() => setError(date ? 'לא נמצאה חידה לתאריך זה' : 'לא נמצאה חידה להיום'))
       .finally(() => setLoading(false))
   }, [date, setPuzzle])
+
+  useEffect(() => {
+    if (!isComplete) return
+    setShowFireworks(true)
+    const timer = setTimeout(() => setShowFireworks(false), 3000)
+    return () => clearTimeout(timer)
+  }, [isComplete])
 
   if (loading) {
     return (
@@ -39,29 +58,43 @@ export default function GamePage() {
 
   return (
     <div className="flex flex-col items-center gap-6 py-8 px-4 min-h-dvh">
+      {showFireworks && <Fireworks />}
+
       <header className="text-center mt-0">
         <img src="/complete-logo-01.png" alt="מחרוזות" className="h-12 mx-auto" />
         <p className="text-gray-500 mt-1">מצא את המילים בנושא</p>
       </header>
-
-      {isComplete && (
-        <div className="bg-green-100 border border-green-300 rounded-xl px-6 py-4 text-center">
-          <p className="text-green-700 text-xl font-bold">כל הכבוד! סיימת את החידה 🎉</p>
-        </div>
-      )}
 
       <div className="bg-blue-50 rounded-xl px-6 py-3 text-center">
         <p className="text-sm text-blue-400 font-medium">נושא</p>
         <p className="text-2xl font-bold text-blue-700">{puzzle.theme}</p>
       </div>
 
-      <HintBar />
+      {isComplete ? (
+        <div className="bg-green-100 border border-green-300 rounded-xl px-6 py-4 text-center flex flex-col items-center gap-3">
+          <p className="text-green-700 text-xl font-bold">כל הכבוד! סיימת את החידה 🎉</p>
+          <button
+            onClick={handleShare}
+            className="bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg px-4 py-2"
+          >
+            שתף תוצאה
+          </button>
+        </div>
+      ) : (
+        <HintBar />
+      )}
 
       <Grid />
 
       <p className="text-sm text-gray-400 font-medium">
         נמצאו {foundWords.length} מתוך {puzzle.word_count + 1} מילים
       </p>
+
+      {shareCopied && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-green-600 text-white text-sm font-medium rounded-lg px-4 py-2 shadow-lg">
+          הועתק ללוח! ✓
+        </div>
+      )}
     </div>
   )
 }

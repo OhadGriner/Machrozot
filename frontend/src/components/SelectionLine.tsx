@@ -34,8 +34,19 @@ export default function SelectionLine({ selectedCells, foundWordLines, container
 
   useEffect(() => {
     if (!containerRef.current) return
-    setContainerRect(containerRef.current.getBoundingClientRect())
-  }, [selectedCells, foundWordLines, containerRef])
+    const update = () => setContainerRect(containerRef.current!.getBoundingClientRect())
+    update()
+
+    const observer = new ResizeObserver(update)
+    observer.observe(containerRef.current)
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+    }
+  }, [containerRef])
 
   if (!containerRect) return null
 
