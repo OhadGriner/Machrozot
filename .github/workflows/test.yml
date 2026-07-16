@@ -12,6 +12,10 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      ADMIN_PASSWORD: test
+      DATABASE_URL: "sqlite+aiosqlite:///:memory:"
+      SECRET_KEY: test
 
     steps:
       - uses: actions/checkout@v4
