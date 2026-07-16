@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import admin, puzzle
+from app.routers import admin, feedback, puzzle
 
 app = FastAPI(title="Machrozot")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 
 app.include_router(puzzle.router)
 app.include_router(admin.router)
+app.include_router(feedback.router)
 
 
 @app.get("/health")

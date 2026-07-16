@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.config import settings
 from app.database import Base
 import app.models.puzzle  # noqa: F401 — registers models with Base
+import app.models.feedback  # noqa: F401 — registers models with Base
 
 config = context.config
 if config.config_file_name is not None:

@@ -25,8 +25,20 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export interface FeedbackCreate {
+  message: string
+  contact?: string
+  context: string
+}
+
 export const api = {
   getTodayPuzzle: () => request<PuzzlePublic>('/api/puzzle/today'),
   getPuzzleById: (id: number) => request<PuzzlePublic>(`/api/puzzle/${id}`),
   getPuzzleByDate: (date: string) => request<PuzzlePublic>(`/api/puzzle/date/${date}`),
+  submitFeedback: (data: FeedbackCreate) =>
+    request('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
 }

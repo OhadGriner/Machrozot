@@ -5,6 +5,7 @@ import { useGameStore } from '../store/gameStore'
 import Grid from '../components/Grid'
 import HintBar from '../components/HintBar'
 import Fireworks from '../components/Fireworks'
+import FeedbackPopup from '../components/FeedbackPopup'
 import { buildShareText } from '../utils/shareUtils'
 
 export default function GamePage() {
@@ -14,6 +15,7 @@ export default function GamePage() {
   const [error, setError] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
   const [showFireworks, setShowFireworks] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
 
   const handleShare = async () => {
     if (!puzzle) return
@@ -38,6 +40,10 @@ export default function GamePage() {
     setShowFireworks(true)
     const timer = setTimeout(() => setShowFireworks(false), 3000)
     return () => clearTimeout(timer)
+  }, [isComplete])
+
+  useEffect(() => {
+    if (isComplete) setShowFeedback(true)
   }, [isComplete])
 
   if (loading) {
@@ -84,11 +90,22 @@ export default function GamePage() {
         <HintBar />
       )}
 
-      <Grid />
+      <div className="relative">
+        <Grid />
+        {showFeedback && (
+          <FeedbackPopup context="post_completion" onClose={() => setShowFeedback(false)} />
+        )}
+      </div>
 
       <p className="text-sm text-gray-400 font-medium">
         נמצאו {foundWords.length} מתוך {puzzle.word_count + 1} מילים
       </p>
+
+      <footer>
+        <a href="mailto:ohad.griner@gmail.com" className="text-sm text-gray-400 hover:text-gray-600">
+          📧 צור קשר
+        </a>
+      </footer>
 
       {shareCopied && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-green-600 text-white text-sm font-medium rounded-lg px-4 py-2 shadow-lg">
