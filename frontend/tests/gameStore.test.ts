@@ -104,6 +104,18 @@ describe('bonus word gating', () => {
 
     expect(useGameStore.getState().nonThemeCount).toBe(1)
   })
+
+  it('does not clobber a hint granted through another means (e.g. the tutorial) when a wrong selection is submitted', () => {
+    useGameStore.setState({ hintsEarned: 1 })
+    const { selectCell, submitSelection } = useGameStore.getState()
+    // A nonsense selection that isn't the theme word, mega machrozet, or a bonus word.
+    selectCell({ row: 0, col: 1 })
+    selectCell({ row: 1, col: 1 })
+    selectCell({ row: 1, col: 2 })
+    submitSelection()
+
+    expect(useGameStore.getState().hintsEarned).toBe(1)
+  })
 })
 
 describe('useHint', () => {

@@ -211,7 +211,7 @@ export default function LevelGridViewPage() {
       )}
 
       <div className="relative inline-block" style={{ zIndex: 0 }}>
-        <SelectionLine selectedCells={[]} foundWordLines={wordLines} containerRef={gridContainerRef} />
+        <SelectionLine cols={puzzle.grid[0]?.length ?? 0} selectedCells={[]} foundWordLines={wordLines} />
         <div ref={gridContainerRef} className="flex flex-col items-center gap-2 select-none">
           {puzzle.grid.map((row, r) => (
             <div key={r} className="flex gap-2">

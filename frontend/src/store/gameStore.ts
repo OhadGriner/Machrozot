@@ -101,7 +101,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   submitSelection: () => {
-    const { puzzle, selectedCells, cellStates, foundWords, nonThemeCount, foundBonusWords } = get()
+    const { puzzle, selectedCells, cellStates, foundWords, nonThemeCount, foundBonusWords, hintsEarned } = get()
     if (!puzzle || selectedCells.length < 2) {
       get().clearSelection()
       return
@@ -141,7 +141,11 @@ export const useGameStore = create<GameState>((set, get) => ({
         !foundBonusWords.includes(normalizedSelected)
 
       const newNonThemeCount = isBonusWord ? nonThemeCount + 1 : nonThemeCount
-      const newHintsEarned = Math.floor(newNonThemeCount / 3)
+      // Take the max rather than overwriting outright — otherwise any wrong
+      // selection recomputes hintsEarned purely from nonThemeCount and can
+      // clobber a hint granted through another means (e.g. the tutorial's
+      // scripted grant) back down to 0.
+      const newHintsEarned = Math.max(hintsEarned, Math.floor(newNonThemeCount / 3))
       const newFoundBonusWords = isBonusWord ? [...foundBonusWords, normalizedSelected] : foundBonusWords
       get().clearSelection()
       set({ nonThemeCount: newNonThemeCount, hintsEarned: newHintsEarned, foundBonusWords: newFoundBonusWords })

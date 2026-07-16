@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { useGameStore } from '../store/gameStore'
@@ -6,7 +6,10 @@ import Grid from '../components/Grid'
 import HintBar from '../components/HintBar'
 import Fireworks from '../components/Fireworks'
 import FeedbackPopup from '../components/FeedbackPopup'
+import TutorialScreen from '../components/TutorialScreen'
 import { buildShareText } from '../utils/shareUtils'
+
+const TUTORIAL_SEEN_KEY = 'hasSeenTutorial'
 
 export default function GamePage() {
   const { date } = useParams<{ date?: string }>()
@@ -16,6 +19,25 @@ export default function GamePage() {
   const [shareCopied, setShareCopied] = useState(false)
   const [showFireworks, setShowFireworks] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem(TUTORIAL_SEEN_KEY))
+  const [showTutorialReplay, setShowTutorialReplay] = useState(false)
+  const savedStateRef = useRef<ReturnType<typeof useGameStore.getState> | null>(null)
+
+  const finishTutorial = () => {
+    localStorage.setItem(TUTORIAL_SEEN_KEY, '1')
+    setShowTutorial(false)
+  }
+
+  const openTutorialReplay = () => {
+    savedStateRef.current = useGameStore.getState()
+    setShowTutorialReplay(true)
+  }
+
+  const closeTutorialReplay = () => {
+    if (savedStateRef.current) useGameStore.setState(savedStateRef.current)
+    savedStateRef.current = null
+    setShowTutorialReplay(false)
+  }
 
   const handleShare = async () => {
     if (!puzzle) return
@@ -26,6 +48,7 @@ export default function GamePage() {
   }
 
   useEffect(() => {
+    if (showTutorial) return
     setLoading(true)
     setError(null)
     const request = date ? api.getPuzzleByDate(date) : api.getTodayPuzzle()
@@ -33,18 +56,22 @@ export default function GamePage() {
       .then(setPuzzle)
       .catch(() => setError(date ? 'לא נמצאה חידה לתאריך זה' : 'לא נמצאה חידה להיום'))
       .finally(() => setLoading(false))
-  }, [date, setPuzzle])
+  }, [date, setPuzzle, showTutorial])
 
   useEffect(() => {
-    if (!isComplete) return
+    if (!isComplete || showTutorial || showTutorialReplay) return
     setShowFireworks(true)
     const timer = setTimeout(() => setShowFireworks(false), 3000)
     return () => clearTimeout(timer)
-  }, [isComplete])
+  }, [isComplete, showTutorial, showTutorialReplay])
 
   useEffect(() => {
-    if (isComplete) setShowFeedback(true)
-  }, [isComplete])
+    if (isComplete && !showTutorial && !showTutorialReplay) setShowFeedback(true)
+  }, [isComplete, showTutorial, showTutorialReplay])
+
+  if (showTutorial) {
+    return <TutorialScreen onFinish={finishTutorial} />
+  }
 
   if (loading) {
     return (
@@ -66,7 +93,20 @@ export default function GamePage() {
     <div className="flex flex-col items-center gap-6 py-8 px-4 min-h-dvh">
       {showFireworks && <Fireworks />}
 
-      <header className="text-center mt-0">
+      {showTutorialReplay && (
+        <div className="fixed inset-0 z-30 bg-white">
+          <TutorialScreen onFinish={closeTutorialReplay} />
+        </div>
+      )}
+
+      <header className="text-center mt-0 relative w-full">
+        <button
+          onClick={openTutorialReplay}
+          aria-label="איך משחקים"
+          className="absolute left-2 top-0 w-7 h-7 rounded-full bg-blue-100 text-blue-600 font-bold hover:bg-blue-200"
+        >
+          ?
+        </button>
         <img src="/complete-logo-01.png" alt="מחרוזות" className="h-12 mx-auto" />
         <p className="text-gray-500 mt-1">מצא את המילים בנושא</p>
       </header>

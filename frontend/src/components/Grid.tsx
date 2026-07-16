@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useGameStore } from '../store/gameStore'
 import { useSelection } from '../hooks/useSelection'
 import Cell from './Cell'
@@ -8,7 +8,6 @@ import CurrentWordBanner from './CurrentWordBanner'
 export default function Grid() {
   const { puzzle, cellStates, selectedCells, foundWordLines } = useGameStore()
   const { onCellPointerDown, onCellPointerEnter, onPointerUp } = useSelection()
-  const containerRef = useRef<HTMLDivElement>(null)
 
   // Listen on window (not just the grid container) so a drag that briefly
   // overshoots the grid's edge — very common with real mouse/finger movement,
@@ -35,12 +34,11 @@ export default function Grid() {
       <CurrentWordBanner />
       <div className="relative inline-block" style={{ zIndex: 0 }}>
         <SelectionLine
+          cols={puzzle.grid[0]?.length ?? 0}
           selectedCells={selectedCells}
           foundWordLines={foundWordLines}
-          containerRef={containerRef}
         />
         <div
-          ref={containerRef}
           className="flex flex-col items-center gap-2 select-none touch-none"
           onPointerMove={handlePointerMove}
         >

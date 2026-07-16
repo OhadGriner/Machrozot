@@ -1,26 +1,31 @@
-import { useEffect, useState } from 'react'
 import type { CellPosition, WordLine } from '../store/gameStore'
 
 interface Props {
+  cols: number
   selectedCells: CellPosition[]
   foundWordLines: WordLine[]
-  containerRef: React.RefObject<HTMLDivElement | null>
 }
 
-function cellCenter(cell: CellPosition, containerRect: DOMRect): { x: number; y: number } | null {
-  const el = document.querySelector(`[data-row="${cell.row}"][data-col="${cell.col}"]`)
-  if (!el) return null
-  const rect = el.getBoundingClientRect()
+// Matches Cell.tsx's fixed w-12/h-12 (48px) and the gap-2 (8px) used between
+// both rows and columns in Grid.tsx. Cells never resize responsively, so a
+// cell's pixel center is fully determined by its row/col — no DOM
+// measurement needed, which means no possible staleness if the page layout
+// shifts for unrelated reasons (viewport resize, address-bar collapse, etc).
+const CELL_SIZE = 48
+const GAP = 8
+
+function cellCenter(cell: CellPosition, cols: number): { x: number; y: number } {
+  // The whole app is dir="rtl" (index.html), so a plain flex row lays its
+  // children out right-to-left — column 0 renders on the right, not the
+  // left. The x-axis has to mirror against the column count to match.
   return {
-    x: rect.left + rect.width / 2 - containerRect.left,
-    y: rect.top + rect.height / 2 - containerRect.top,
+    x: (cols - 1 - cell.col) * (CELL_SIZE + GAP) + CELL_SIZE / 2,
+    y: cell.row * (CELL_SIZE + GAP) + CELL_SIZE / 2,
   }
 }
 
-function toPoints(cells: CellPosition[], containerRect: DOMRect) {
-  return cells
-    .map((c) => cellCenter(c, containerRect))
-    .filter(Boolean) as { x: number; y: number }[]
+function toPoints(cells: CellPosition[], cols: number) {
+  return cells.map((c) => cellCenter(c, cols))
 }
 
 const LINE_COLOR: Record<WordLine['state'], string> = {
@@ -29,28 +34,8 @@ const LINE_COLOR: Record<WordLine['state'], string> = {
   hint: '#fb923c',
 }
 
-export default function SelectionLine({ selectedCells, foundWordLines, containerRef }: Props) {
-  const [containerRect, setContainerRect] = useState<DOMRect | null>(null)
-
-  useEffect(() => {
-    if (!containerRef.current) return
-    const update = () => setContainerRect(containerRef.current!.getBoundingClientRect())
-    update()
-
-    const observer = new ResizeObserver(update)
-    observer.observe(containerRef.current)
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      observer.disconnect()
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
-  }, [containerRef])
-
-  if (!containerRect) return null
-
-  const selectionPoints = toPoints(selectedCells, containerRect)
+export default function SelectionLine({ cols, selectedCells, foundWordLines }: Props) {
+  const selectionPoints = toPoints(selectedCells, cols)
   const polylineProps = {
     fill: 'none',
     strokeWidth: 10,
@@ -61,7 +46,7 @@ export default function SelectionLine({ selectedCells, foundWordLines, container
   return (
     <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: -1 }}>
       {foundWordLines.map((line, i) => {
-        const pts = toPoints(line.cells, containerRect)
+        const pts = toPoints(line.cells, cols)
         if (pts.length < 2) return null
         return (
           <polyline
