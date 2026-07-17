@@ -10,6 +10,9 @@ if (KEY) {
     api_host: HOST,
     person_profiles: 'identified_only',
     capture_pageview: true,
+    // Admin activity isn't player behavior — it would pollute retention and
+    // funnel numbers, so drop every event emitted from an /admin route.
+    before_send: (event) => (window.location.pathname.startsWith('/admin') ? null : event),
   })
 }
 
