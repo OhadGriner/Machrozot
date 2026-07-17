@@ -1,41 +1,43 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { adminAuth } from '../api/adminClient'
+import { useAuthStore } from '../store/authStore'
+import { initGoogleButton, isGoogleAuthConfigured } from '../utils/googleAuth'
 
 export default function AdminLoginPage() {
-  const [password, setPassword] = useState('')
   const navigate = useNavigate()
+  const { user, loginWithGoogle } = useAuthStore()
+  const buttonRef = useRef<HTMLDivElement>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    adminAuth.set(password)
-    navigate('/admin')
-  }
+  // Already signed in: admins go straight in; anyone else sees the denial.
+  useEffect(() => {
+    if (user?.is_admin) navigate('/admin')
+  }, [user, navigate])
+
+  useEffect(() => {
+    if (user || !buttonRef.current) return
+    initGoogleButton(buttonRef.current, (credential) => {
+      loginWithGoogle(credential).catch(() => setError('ההתחברות נכשלה, נסו שוב'))
+    }).catch(() => setError('טעינת ההתחברות של Google נכשלה'))
+  }, [user, loginWithGoogle])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-white p-8 rounded-2xl shadow-md w-80 flex flex-col gap-4"
-        dir="rtl"
-      >
+      <div className="bg-white p-8 rounded-2xl shadow-md w-80 flex flex-col items-center gap-4" dir="rtl">
         <h1 className="text-xl font-bold text-center">כניסת מנהל</h1>
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="סיסמה"
-          className="border rounded-lg px-3 py-2 text-center focus:outline-none focus:ring-2 focus:ring-blue-400"
-          autoFocus
-        />
-        <button
-          type="submit"
-          disabled={!password}
-          className="bg-blue-500 text-white rounded-lg py-2 font-bold hover:bg-blue-600 disabled:opacity-40"
-        >
-          כניסה
-        </button>
-      </form>
+        {!isGoogleAuthConfigured() ? (
+          <p className="text-sm text-red-500 text-center">
+            התחברות Google אינה מוגדרת (חסר VITE_GOOGLE_CLIENT_ID)
+          </p>
+        ) : user && !user.is_admin ? (
+          <p className="text-sm text-red-500 text-center">
+            אין לך הרשאת מנהל ({user.email})
+          </p>
+        ) : (
+          <div ref={buttonRef} />
+        )}
+        {error && <p className="text-sm text-red-500 text-center">{error}</p>}
+      </div>
     </div>
   )
 }

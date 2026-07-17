@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { adminApi, adminAuth } from '../api/adminClient'
+import { adminApi } from '../api/adminClient'
+import { useRequireAdmin } from '../hooks/useRequireAdmin'
 import SelectionLine from '../components/SelectionLine'
 import type { LevelGridDetail, ShuffleStatus } from '../api/adminClient'
 import type { WordLine } from '../store/gameStore'
@@ -31,6 +32,7 @@ const CELL_STYLE: Record<CellVisual, string> = {
 export default function LevelGridViewPage() {
   const { date, id } = useParams<{ date?: string; id?: string }>()
   const navigate = useNavigate()
+  const isAdmin = useRequireAdmin()
   const gridContainerRef = useRef<HTMLDivElement>(null)
 
   const [puzzle, setPuzzle] = useState<LevelGridDetail | null>(null)
@@ -42,7 +44,6 @@ export default function LevelGridViewPage() {
   const pollRef = useRef<number | null>(null)
 
   const load = useCallback(async () => {
-    if (!adminAuth.isSet()) { navigate('/admin/login'); return }
     if (!date && !id) return
     setError('')
     try {
@@ -59,7 +60,7 @@ export default function LevelGridViewPage() {
     }
   }, [date, id, navigate])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { if (isAdmin) load() }, [isAdmin, load])
 
   // Polls the shuffle status for `puzzleId` until it's done or errored,
   // updating the live elapsed-time display each tick. Reused both to resume

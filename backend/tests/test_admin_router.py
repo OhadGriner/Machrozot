@@ -44,11 +44,6 @@ def _fast_word(length: int, offset: int = 0) -> str:
 
 
 @pytest.fixture
-def admin_headers():
-    return {"x-admin-password": settings.admin_password}
-
-
-@pytest.fixture
 def fake_grid_result():
     # 8 rows x 6 cols, matching the real ROWS/COLS convention (grid_generator.py) —
     # word_solver.py's solve_grid iterates the full grid assuming this exact shape.
@@ -78,12 +73,28 @@ def stub_generate_grid(monkeypatch, fake_grid_result):
 
 async def test_list_levels_requires_admin(api: AsyncClient):
     response = await api.get("/api/admin/puzzles")
-    assert response.status_code in (401, 422)  # missing header
-
-
-async def test_list_levels_rejects_wrong_password(api: AsyncClient):
-    response = await api.get("/api/admin/puzzles", headers={"x-admin-password": "wrong"})
     assert response.status_code == 401
+
+
+async def test_list_levels_rejects_garbage_token(api: AsyncClient):
+    response = await api.get("/api/admin/puzzles", headers={"Authorization": "Bearer not-a-jwt"})
+    assert response.status_code == 401
+
+
+async def test_list_levels_rejects_non_admin_user(api: AsyncClient, db_session, monkeypatch):
+    from app.models.user import User
+    from app.services.auth_service import create_access_token
+
+    monkeypatch.setattr(settings, "admin_emails", "admin@example.com")
+    user = User(google_sub="regular-sub", email="player@example.com", name="P", picture_url=None)
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    response = await api.get(
+        "/api/admin/puzzles", headers={"Authorization": f"Bearer {create_access_token(user)}"}
+    )
+    assert response.status_code == 403
 
 
 async def test_create_level_returns_422_for_words_that_dont_fit_the_board(

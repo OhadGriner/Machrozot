@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { adminApi, adminAuth } from '../api/adminClient'
+import { adminApi } from '../api/adminClient'
+import { useRequireAdmin } from '../hooks/useRequireAdmin'
 import type { ScheduleEntry } from '../api/adminClient'
 
 const MONTH_NAMES = [
@@ -20,6 +21,7 @@ function addMonth(year: number, month: number, delta: number) {
 
 export default function AdminCalendarPage() {
   const navigate = useNavigate()
+  const isAdmin = useRequireAdmin()
   const today = new Date()
 
   const [view, setView] = useState({ year: today.getFullYear(), month: today.getMonth() })
@@ -28,7 +30,6 @@ export default function AdminCalendarPage() {
   const [error, setError] = useState('')
 
   const loadSchedules = useCallback(async () => {
-    if (!adminAuth.isSet()) { navigate('/admin/login'); return }
     const start = toDateStr(view.year, view.month, 1)
     const lastDay = new Date(view.year, view.month + 1, 0).getDate()
     const end = toDateStr(view.year, view.month, lastDay)
@@ -50,9 +51,10 @@ export default function AdminCalendarPage() {
   }, [view, navigate])
 
   useEffect(() => {
+    if (!isAdmin) return
     setLoading(true)
     loadSchedules()
-  }, [loadSchedules])
+  }, [isAdmin, loadSchedules])
 
   if (loading) {
     return (

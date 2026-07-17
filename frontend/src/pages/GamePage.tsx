@@ -1,22 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { api } from '../api/client'
+import { api, progressApi } from '../api/client'
 import { useGameStore } from '../store/gameStore'
+import { useAuthStore } from '../store/authStore'
 import Grid from '../components/Grid'
 import HintBar from '../components/HintBar'
 import Fireworks from '../components/Fireworks'
 import FeedbackPopup from '../components/FeedbackPopup'
 import TutorialScreen from '../components/TutorialScreen'
+import AuthButton from '../components/AuthButton'
 import { buildShareText } from '../utils/shareUtils'
 import { track } from '../utils/analytics'
+import { clearOldProgress, loadProgress, saveProgress } from '../utils/persistence'
+import type { SavedProgress } from '../utils/persistence'
+import { fromServerResponse, pickRicherProgress, toServerPayload } from '../utils/progressSync'
 
 const TUTORIAL_SEEN_KEY = 'hasSeenTutorial'
 
 export default function GamePage() {
   const { date } = useParams<{ date?: string }>()
   const {
-    puzzle, setPuzzle, foundWords, foundBonusWords, isComplete, solveOrder, hintsUsed, hintsEarned,
+    puzzle, setPuzzle, foundWords, foundBonusWords, isComplete, solveOrder,
+    hintsUsed, hintsEarned, nonThemeCount,
   } = useGameStore()
+  const user = useAuthStore((s) => s.user)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
@@ -33,6 +40,9 @@ export default function GamePage() {
   const processedBonusRef = useRef(0)
   const processedHintsRef = useRef(0)
   const completedFiredRef = useRef(false)
+  // True when the restored save was already complete — suppresses replaying
+  // the completion celebration (fireworks/feedback) on every reload.
+  const restoredCompleteRef = useRef(false)
 
   const finishTutorial = () => {
     localStorage.setItem(TUTORIAL_SEEN_KEY, '1')
@@ -64,24 +74,67 @@ export default function GamePage() {
     setError(null)
     const request = date ? api.getPuzzleByDate(date) : api.getTodayPuzzle()
     request
-      .then((data) => {
+      .then(async (data) => {
         setPuzzle(data)
-        puzzleStartRef.current = Date.now()
+        clearOldProgress()
+        const local = loadProgress(data.id)
+        // Logged-in players may have progress from another device — reconcile
+        // with the server copy; the richer of the two wins (tie → local).
+        let server: SavedProgress | null = null
+        if (user) {
+          try {
+            const response = await progressApi.get(data.id)
+            server = response ? fromServerResponse(response) : null
+          } catch {
+            // Server sync is best-effort; local progress still applies.
+          }
+        }
+        const saved = pickRicherProgress(local, server)
+        if (saved) {
+          useGameStore.setState({
+            cellStates: saved.cellStates,
+            foundWords: saved.foundWords,
+            foundWordLines: saved.foundWordLines,
+            hintWordLines: saved.hintWordLines,
+            foundBonusWords: saved.foundBonusWords,
+            nonThemeCount: saved.nonThemeCount,
+            hintsEarned: saved.hintsEarned,
+            hintsUsed: saved.hintsUsed,
+            isComplete: saved.isComplete,
+            solveOrder: saved.solveOrder,
+          })
+          // Both sides converge on the winner.
+          saveProgress(data.id, saved)
+          if (user && saved !== server) {
+            progressApi.put(data.id, toServerPayload(saved)).catch(() => {})
+          }
+        }
+        // Backdating the start by previously accumulated play time makes every
+        // downstream duration (seconds_since_start, total_seconds, the next
+        // save's activeSeconds) measure real cumulative play across visits.
+        puzzleStartRef.current = Date.now() - (saved?.activeSeconds ?? 0) * 1000
         lastEventTimeRef.current = Date.now()
-        processedWordsRef.current = 0
-        processedBonusRef.current = 0
-        processedHintsRef.current = 0
-        completedFiredRef.current = false
+        // Seed the dedup refs with restored counts so nothing already found
+        // re-fires its analytics event, and a restored completed puzzle
+        // doesn't replay puzzle_completed.
+        processedWordsRef.current = saved?.solveOrder.length ?? 0
+        processedBonusRef.current = saved?.foundBonusWords.length ?? 0
+        processedHintsRef.current = saved?.hintsUsed ?? 0
+        completedFiredRef.current = saved?.isComplete ?? false
+        restoredCompleteRef.current = saved?.isComplete ?? false
         track('puzzle_loaded', {
           puzzle_id: data.id,
           date: date ?? 'today',
           theme: data.theme,
           word_count: data.word_count,
+          resumed: !!saved,
         })
       })
       .catch(() => setError(date ? 'לא נמצאה חידה לתאריך זה' : 'לא נמצאה חידה להיום'))
       .finally(() => setLoading(false))
-  }, [date, setPuzzle, showTutorial])
+    // user?.id in the deps re-runs the load on login/logout, which is exactly
+    // the moment server progress needs reconciling (e.g. logging in mid-game).
+  }, [date, setPuzzle, showTutorial, user?.id])
 
   // Word-found timing: solveOrder is parallel-indexed with foundWords (both
   // pushed together in gameStore's submitSelection), so index i in each array
@@ -127,8 +180,10 @@ export default function GamePage() {
     processedHintsRef.current = hintsUsed
   }, [hintsUsed, hintsEarned, showTutorial, showTutorialReplay])
 
+  // Fireworks/feedback celebrate the moment of completion — a puzzle restored
+  // already-complete from a previous visit must not replay them on reload.
   useEffect(() => {
-    if (!isComplete || showTutorial || showTutorialReplay) return
+    if (!isComplete || showTutorial || showTutorialReplay || restoredCompleteRef.current) return
     setShowFireworks(true)
     const timer = setTimeout(() => setShowFireworks(false), 3000)
     return () => clearTimeout(timer)
@@ -145,8 +200,71 @@ export default function GamePage() {
   }, [isComplete, showTutorial, showTutorialReplay, hintsUsed, foundBonusWords])
 
   useEffect(() => {
-    if (isComplete && !showTutorial && !showTutorialReplay) setShowFeedback(true)
+    if (isComplete && !showTutorial && !showTutorialReplay && !restoredCompleteRef.current) {
+      setShowFeedback(true)
+    }
   }, [isComplete, showTutorial, showTutorialReplay])
+
+  // Persist progress on every meaningful change. cellStates is read at save
+  // time (not a dependency) since its meaningful changes always accompany one
+  // of the listed fields — and mid-drag 'selected' entries are stripped so a
+  // restore never shows phantom selections.
+  useEffect(() => {
+    if (!puzzle || puzzle.id === -1 || showTutorial || showTutorialReplay) return
+    if (foundWords.length === 0 && foundBonusWords.length === 0 && hintsUsed === 0 && nonThemeCount === 0) return
+    const { cellStates, foundWordLines, hintWordLines } = useGameStore.getState()
+    const cleanCellStates = Object.fromEntries(
+      Object.entries(cellStates).filter(([, state]) => state !== 'selected' && state !== 'default')
+    )
+    saveProgress(puzzle.id, {
+      cellStates: cleanCellStates,
+      foundWords,
+      foundWordLines,
+      hintWordLines,
+      foundBonusWords,
+      nonThemeCount,
+      hintsEarned,
+      hintsUsed,
+      isComplete,
+      solveOrder,
+      activeSeconds: (Date.now() - puzzleStartRef.current) / 1000,
+      lastSavedAt: new Date().toISOString(),
+    })
+  }, [
+    puzzle, foundWords, foundBonusWords, nonThemeCount, hintsEarned, hintsUsed,
+    isComplete, solveOrder, showTutorial, showTutorialReplay,
+  ])
+
+  // Server sync for logged-in players: reads the just-written localStorage
+  // copy (the save effect above runs first) and pushes it, debounced so a
+  // burst of finds becomes one request.
+  useEffect(() => {
+    if (!user || !puzzle || puzzle.id === -1 || showTutorial || showTutorialReplay) return
+    if (foundWords.length === 0 && foundBonusWords.length === 0 && hintsUsed === 0 && nonThemeCount === 0) return
+    const puzzleId = puzzle.id
+    const timer = window.setTimeout(() => {
+      const saved = loadProgress(puzzleId)
+      if (saved) progressApi.put(puzzleId, toServerPayload(saved)).catch(() => {})
+    }, 2000)
+    return () => window.clearTimeout(timer)
+  }, [
+    user, puzzle, foundWords, foundBonusWords, nonThemeCount, hintsEarned, hintsUsed,
+    isComplete, solveOrder, showTutorial, showTutorialReplay,
+  ])
+
+  // Best-effort flush when the tab is hidden/closed, so a find made within
+  // the debounce window isn't lost to the server.
+  useEffect(() => {
+    if (!user || !puzzle || puzzle.id === -1) return
+    const puzzleId = puzzle.id
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return
+      const saved = loadProgress(puzzleId)
+      if (saved) progressApi.put(puzzleId, toServerPayload(saved)).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', flush)
+    return () => document.removeEventListener('visibilitychange', flush)
+  }, [user, puzzle])
 
   if (showTutorial) {
     return <TutorialScreen onFinish={finishTutorial} />
@@ -186,6 +304,7 @@ export default function GamePage() {
         >
           ?
         </button>
+        <AuthButton />
         <img src="/complete-logo-01.png" alt="מחרוזות" className="h-12 mx-auto" />
         <p className="text-gray-500 mt-1">מצא את המילים בנושא</p>
       </header>

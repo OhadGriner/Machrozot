@@ -2,15 +2,16 @@ import asyncio
 import time
 from datetime import date
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pydantic import BaseModel
 
-from app.config import settings
 from app.database import AsyncSessionLocal, get_db
+from app.dependencies import require_admin_user
 from app.models.puzzle import DailySchedule, Puzzle
+from app.models.user import User
 from app.schemas.puzzle import PuzzleGridDetail, PuzzleSummary, PuzzleWordsCreate, ScheduleAssign
 from app.services import job_store, puzzle_service, word_solver
 from app.services.grid_generator import GridGenerationError, generate_grid
@@ -40,17 +41,12 @@ def _generate_and_solve(
     return grid, mega_machrozet_cells, word_cells, bonus_words
 
 
-async def require_admin(x_admin_password: str = Header()):
-    if x_admin_password != settings.admin_password:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-
 @router.get("/schedules")
 async def list_schedules(
     start: date,
     end: date,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     result = await db.execute(
         select(DailySchedule, Puzzle.theme)
@@ -66,7 +62,7 @@ async def list_schedules(
 @router.get("/puzzles", response_model=list[PuzzleSummary])
 async def list_puzzles(
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     puzzles = await db.execute(select(Puzzle.id, Puzzle.theme))
     schedules = await db.execute(select(DailySchedule.puzzle_id, DailySchedule.date))
@@ -83,7 +79,7 @@ async def list_puzzles(
 async def create_level(
     data: PuzzleWordsCreate,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     try:
         grid, mega_machrozet_cells, word_cells, bonus_words = await asyncio.to_thread(
@@ -101,7 +97,7 @@ async def create_level(
 async def get_level(
     puzzle_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     puzzle = await puzzle_service.get_puzzle_by_id(db, puzzle_id)
     if not puzzle:
@@ -153,7 +149,7 @@ async def _run_shuffle(job_id: str, puzzle_id: int, mega_machrozet: str, words: 
 async def shuffle_level(
     puzzle_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     # If a shuffle is already running for this puzzle (e.g. the admin
     # navigated away and came back and clicked again), just resume watching
@@ -174,7 +170,7 @@ async def shuffle_level(
 @router.get("/puzzles/{puzzle_id}/shuffle-status", response_model=ShuffleJobStatus)
 async def get_shuffle_status(
     puzzle_id: int,
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     """State of the most recent shuffle job for this puzzle, if any — lets the
     admin UI show elapsed time and resume watching progress after a page
@@ -187,7 +183,7 @@ async def get_shuffle_status(
 async def delete_level(
     puzzle_id: int,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     puzzle = await puzzle_service.get_puzzle_by_id(db, puzzle_id)
     if not puzzle:
@@ -199,7 +195,7 @@ async def delete_level(
 async def get_schedule(
     schedule_date: date,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     puzzle = await puzzle_service.get_scheduled_puzzle(db, schedule_date)
     if not puzzle:
@@ -212,7 +208,7 @@ async def set_schedule(
     schedule_date: date,
     data: ScheduleAssign,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     puzzle = await puzzle_service.get_puzzle_by_id(db, data.puzzle_id)
     if not puzzle:
@@ -224,7 +220,7 @@ async def set_schedule(
 async def unassign_schedule(
     schedule_date: date,
     db: AsyncSession = Depends(get_db),
-    _: None = Depends(require_admin),
+    _: User = Depends(require_admin_user),
 ):
     removed = await puzzle_service.unassign_schedule(db, schedule_date)
     if not removed:

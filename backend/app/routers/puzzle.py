@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.dependencies import require_admin_user
+from app.models.user import User
 from app.schemas.puzzle import PuzzleCreate, PuzzlePublic
 from app.services import puzzle_service
 from app.services.hebrew_utils import Cell
@@ -41,7 +43,11 @@ async def get_by_id(puzzle_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("", response_model=PuzzlePublic, status_code=201)
-async def create(data: PuzzleCreate, db: AsyncSession = Depends(get_db)):
+async def create(
+    data: PuzzleCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin_user),
+):
     puzzle = await puzzle_service.create_puzzle(
         db,
         data.theme,

@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { adminApi, adminAuth } from '../api/adminClient'
+import { adminApi } from '../api/adminClient'
+import { useRequireAdmin } from '../hooks/useRequireAdmin'
 
 const TOTAL_LETTERS = 48
 
@@ -17,9 +18,7 @@ export default function LevelEditorPage() {
   const [errorMessage, setErrorMessage] = useState('')
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null)
 
-  useEffect(() => {
-    if (!adminAuth.isSet()) { navigate('/admin/login') }
-  }, [navigate])
+  useRequireAdmin()
 
   const addWord = useCallback(() => {
     const trimmed = wordInput.trim()

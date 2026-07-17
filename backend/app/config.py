@@ -10,7 +10,14 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 1 week
     cors_origins: list[str] = ["http://localhost:5173"]
-    admin_password: str  # required — set ADMIN_PASSWORD env var, never commit a value
+    google_client_id: str = ""
+    # Comma-separated string, not list[str] — pydantic-settings JSON-parses
+    # list-typed env vars, which makes plain "a@x.com,b@y.com" values crash.
+    admin_emails: str = ""
+
+    @property
+    def admin_email_list(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
 
 
 settings = Settings()

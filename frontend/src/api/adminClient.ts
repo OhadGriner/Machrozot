@@ -1,24 +1,25 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
-const STORAGE_KEY = 'adminPassword'
+import { authToken } from './client'
 
-export const adminAuth = {
-  set: (password: string) => sessionStorage.setItem(STORAGE_KEY, password),
-  get: () => sessionStorage.getItem(STORAGE_KEY) ?? '',
-  clear: () => sessionStorage.removeItem(STORAGE_KEY),
-  isSet: () => !!sessionStorage.getItem(STORAGE_KEY),
-}
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = authToken.get()
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      'x-admin-password': adminAuth.get(),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   })
   if (response.status === 401) {
-    adminAuth.clear()
+    // Expired/invalid token — drop it and let the page redirect to login.
+    authToken.clear()
+    throw new Error('Unauthorized')
+  }
+  if (response.status === 403) {
+    // Valid account but not an admin — keep the token (it's fine for the
+    // game), just refuse admin access.
     throw new Error('Unauthorized')
   }
   if (!response.ok) {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { adminApi, adminAuth } from '../api/adminClient'
+import { adminApi } from '../api/adminClient'
+import { useRequireAdmin } from '../hooks/useRequireAdmin'
 import type { LevelSummary } from '../api/adminClient'
 
 function formatDate(d: string) {
@@ -10,6 +11,7 @@ function formatDate(d: string) {
 export default function LevelPickerPage() {
   const { date } = useParams<{ date: string }>()
   const navigate = useNavigate()
+  const isAdmin = useRequireAdmin()
 
   const [levels, setLevels] = useState<LevelSummary[]>([])
   const [currentId, setCurrentId] = useState<number | null>(null)
@@ -18,7 +20,6 @@ export default function LevelPickerPage() {
   const [assigning, setAssigning] = useState<number | null>(null)
 
   const load = useCallback(async () => {
-    if (!adminAuth.isSet()) { navigate('/admin/login'); return }
     setError('')
     try {
       const [levelList, current] = await Promise.all([
@@ -38,7 +39,7 @@ export default function LevelPickerPage() {
     }
   }, [date, navigate])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { if (isAdmin) load() }, [isAdmin, load])
 
   const pickLevel = async (puzzleId: number) => {
     if (!date) return
