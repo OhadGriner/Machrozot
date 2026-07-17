@@ -8,12 +8,15 @@ import Fireworks from '../components/Fireworks'
 import FeedbackPopup from '../components/FeedbackPopup'
 import TutorialScreen from '../components/TutorialScreen'
 import { buildShareText } from '../utils/shareUtils'
+import { track } from '../utils/analytics'
 
 const TUTORIAL_SEEN_KEY = 'hasSeenTutorial'
 
 export default function GamePage() {
   const { date } = useParams<{ date?: string }>()
-  const { puzzle, setPuzzle, foundWords, isComplete, solveOrder } = useGameStore()
+  const {
+    puzzle, setPuzzle, foundWords, foundBonusWords, isComplete, solveOrder, hintsUsed, hintsEarned,
+  } = useGameStore()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [shareCopied, setShareCopied] = useState(false)
@@ -22,6 +25,14 @@ export default function GamePage() {
   const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem(TUTORIAL_SEEN_KEY))
   const [showTutorialReplay, setShowTutorialReplay] = useState(false)
   const savedStateRef = useRef<ReturnType<typeof useGameStore.getState> | null>(null)
+
+  // Analytics timing/dedup state — reset whenever a new puzzle loads.
+  const puzzleStartRef = useRef(Date.now())
+  const lastEventTimeRef = useRef(Date.now())
+  const processedWordsRef = useRef(0)
+  const processedBonusRef = useRef(0)
+  const processedHintsRef = useRef(0)
+  const completedFiredRef = useRef(false)
 
   const finishTutorial = () => {
     localStorage.setItem(TUTORIAL_SEEN_KEY, '1')
@@ -53,10 +64,68 @@ export default function GamePage() {
     setError(null)
     const request = date ? api.getPuzzleByDate(date) : api.getTodayPuzzle()
     request
-      .then(setPuzzle)
+      .then((data) => {
+        setPuzzle(data)
+        puzzleStartRef.current = Date.now()
+        lastEventTimeRef.current = Date.now()
+        processedWordsRef.current = 0
+        processedBonusRef.current = 0
+        processedHintsRef.current = 0
+        completedFiredRef.current = false
+        track('puzzle_loaded', {
+          puzzle_id: data.id,
+          date: date ?? 'today',
+          theme: data.theme,
+          word_count: data.word_count,
+        })
+      })
       .catch(() => setError(date ? 'לא נמצאה חידה לתאריך זה' : 'לא נמצאה חידה להיום'))
       .finally(() => setLoading(false))
   }, [date, setPuzzle, showTutorial])
+
+  // Word-found timing: solveOrder is parallel-indexed with foundWords (both
+  // pushed together in gameStore's submitSelection), so index i in each array
+  // describes the same solve. The processedWordsRef guard means this only
+  // ever emits for genuinely new entries, safe under StrictMode's double-invoke.
+  useEffect(() => {
+    if (showTutorial || showTutorialReplay) return
+    const newCount = solveOrder.length
+    if (newCount <= processedWordsRef.current) return
+    for (let i = processedWordsRef.current; i < newCount; i++) {
+      const step = solveOrder[i]
+      const now = Date.now()
+      track('word_found', {
+        word: foundWords[i],
+        type: step.type,
+        order_index: i,
+        hinted: step.hinted,
+        seconds_since_start: (now - puzzleStartRef.current) / 1000,
+        seconds_since_previous: (now - lastEventTimeRef.current) / 1000,
+      })
+      lastEventTimeRef.current = now
+    }
+    processedWordsRef.current = newCount
+  }, [solveOrder, foundWords, showTutorial, showTutorialReplay])
+
+  useEffect(() => {
+    if (showTutorial || showTutorialReplay) return
+    const newCount = foundBonusWords.length
+    if (newCount <= processedBonusRef.current) return
+    for (let i = processedBonusRef.current; i < newCount; i++) {
+      track('bonus_word_found', {
+        word: foundBonusWords[i],
+        seconds_since_start: (Date.now() - puzzleStartRef.current) / 1000,
+      })
+    }
+    processedBonusRef.current = newCount
+  }, [foundBonusWords, showTutorial, showTutorialReplay])
+
+  useEffect(() => {
+    if (showTutorial || showTutorialReplay) return
+    if (hintsUsed <= processedHintsRef.current) return
+    track('hint_used', { hints_used: hintsUsed, hints_earned: hintsEarned })
+    processedHintsRef.current = hintsUsed
+  }, [hintsUsed, hintsEarned, showTutorial, showTutorialReplay])
 
   useEffect(() => {
     if (!isComplete || showTutorial || showTutorialReplay) return
@@ -64,6 +133,16 @@ export default function GamePage() {
     const timer = setTimeout(() => setShowFireworks(false), 3000)
     return () => clearTimeout(timer)
   }, [isComplete, showTutorial, showTutorialReplay])
+
+  useEffect(() => {
+    if (!isComplete || showTutorial || showTutorialReplay || completedFiredRef.current) return
+    completedFiredRef.current = true
+    track('puzzle_completed', {
+      total_seconds: (Date.now() - puzzleStartRef.current) / 1000,
+      hints_used: hintsUsed,
+      bonus_words_found: foundBonusWords.length,
+    })
+  }, [isComplete, showTutorial, showTutorialReplay, hintsUsed, foundBonusWords])
 
   useEffect(() => {
     if (isComplete && !showTutorial && !showTutorialReplay) setShowFeedback(true)
