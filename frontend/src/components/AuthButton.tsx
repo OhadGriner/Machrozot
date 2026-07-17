@@ -31,7 +31,10 @@ export default function AuthButton() {
           )}
         </button>
         {menuOpen && (
-          <div className="absolute left-0 top-9 bg-white border border-gray-200 rounded-lg shadow-lg px-4 py-2 text-sm whitespace-nowrap z-40">
+          // Anchored to the avatar's right edge so the menu opens inward
+          // (leftward) — left-anchoring pushed it off the right side of the
+          // screen, since the avatar sits at the screen's right edge.
+          <div className="absolute right-0 top-9 bg-white border border-gray-200 rounded-lg shadow-lg px-4 py-2 text-sm whitespace-nowrap z-40">
             <p className="text-gray-600 mb-1">{user.name ?? user.email}</p>
             <button
               onClick={() => {

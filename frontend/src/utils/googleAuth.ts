@@ -53,5 +53,12 @@ export async function initGoogleButton(
     client_id: CLIENT_ID,
     callback: (response) => onCredential(response.credential),
   })
-  window.google!.accounts.id.renderButton(container, { theme: 'outline', size: 'medium', shape: 'pill' })
+  // Icon-only: the full "כניסה באמצעות Google" text button is wide enough to
+  // cover the centered logo on narrow screens.
+  window.google!.accounts.id.renderButton(container, {
+    type: 'icon',
+    shape: 'circle',
+    size: 'medium',
+    theme: 'outline',
+  })
 }
