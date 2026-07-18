@@ -24,7 +24,7 @@ export default function Cell({ letter, state, row, col, onPointerDown }: CellPro
       data-col={col}
       className={`
         flex items-center justify-center
-        w-12 h-12 rounded-full border-2
+        w-10 h-10 rounded-full border-2
         text-xl font-bold cursor-pointer select-none
         transition-all duration-100
         ${stateStyles[state]}

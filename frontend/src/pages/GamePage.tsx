@@ -287,7 +287,7 @@ export default function GamePage() {
   }
 
   return (
-    <div className="flex flex-col items-center gap-6 py-8 px-4 min-h-dvh">
+    <div className="flex flex-col items-center gap-4 py-4 px-4 min-h-dvh">
       {showFireworks && <Fireworks />}
 
       {showTutorialReplay && (
@@ -305,13 +305,18 @@ export default function GamePage() {
           ?
         </button>
         <AuthButton />
-        <img src="/complete-logo-01.png" alt="מחרוזות" className="h-12 mx-auto" />
-        <p className="text-gray-500 mt-1">מצא את המילים בנושא</p>
+        <img src="/complete-logo-01.png" alt="מחרוזות" className="h-11 mx-auto" />
       </header>
 
-      <div className="bg-blue-50 rounded-xl px-6 py-3 text-center">
-        <p className="text-sm text-blue-400 font-medium">נושא</p>
-        <p className="text-2xl font-bold text-blue-700">{puzzle.theme}</p>
+      {/* RTL row: theme box renders on the right, the found-counter to its left */}
+      <div className="flex items-center gap-3">
+        <div className="bg-blue-50 rounded-lg px-4 py-1.5 text-center flex items-baseline gap-2">
+          <span className="text-xs text-blue-400 font-medium">נושא</span>
+          <span className="text-lg font-bold text-blue-700">{puzzle.theme}</span>
+        </div>
+        <p className="text-sm text-gray-400 font-medium whitespace-nowrap">
+          {foundWords.length}/{puzzle.word_count + 1} מילים נמצאו
+        </p>
       </div>
 
       {isComplete ? (
@@ -334,10 +339,6 @@ export default function GamePage() {
           <FeedbackPopup context="post_completion" onClose={() => setShowFeedback(false)} />
         )}
       </div>
-
-      <p className="text-sm text-gray-400 font-medium">
-        נמצאו {foundWords.length} מתוך {puzzle.word_count + 1} מילים
-      </p>
 
       <footer>
         <a href="mailto:ohad.griner@gmail.com" className="text-sm text-gray-400 hover:text-gray-600">

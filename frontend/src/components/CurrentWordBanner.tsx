@@ -8,9 +8,9 @@ export default function CurrentWordBanner() {
   const currentWord = puzzle ? selectedCells.map((c) => puzzle.grid[c.row][c.col]).join('') : ''
 
   return (
-    <div className="h-11 flex items-center justify-center">
+    <div className="h-8 flex items-center justify-center">
       {currentWord && (
-        <span className="text-2xl font-bold text-gray-800 tracking-widest">{currentWord}</span>
+        <span className="text-xl font-bold text-gray-800 tracking-widest">{currentWord}</span>
       )}
     </div>
   )

@@ -6,12 +6,12 @@ interface Props {
   foundWordLines: WordLine[]
 }
 
-// Matches Cell.tsx's fixed w-12/h-12 (48px) and the gap-2 (8px) used between
+// Matches Cell.tsx's fixed w-10/h-10 (40px) and the gap-2 (8px) used between
 // both rows and columns in Grid.tsx. Cells never resize responsively, so a
 // cell's pixel center is fully determined by its row/col — no DOM
 // measurement needed, which means no possible staleness if the page layout
 // shifts for unrelated reasons (viewport resize, address-bar collapse, etc).
-const CELL_SIZE = 48
+const CELL_SIZE = 40
 const GAP = 8
 
 function cellCenter(cell: CellPosition, cols: number): { x: number; y: number } {
