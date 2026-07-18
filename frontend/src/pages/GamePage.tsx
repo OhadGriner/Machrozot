@@ -63,6 +63,16 @@ export default function GamePage() {
   const handleShare = async () => {
     if (!puzzle) return
     const text = buildShareText(puzzle.theme, solveOrder)
+    // Native share sheet (WhatsApp / copy / etc.) where available — mainly
+    // mobile; desktop browsers mostly lack it, so fall back to clipboard.
+    if (navigator.share) {
+      try {
+        await navigator.share({ text })
+      } catch {
+        // User closed the share sheet — not an error, nothing to do.
+      }
+      return
+    }
     await navigator.clipboard.writeText(text)
     setShareCopied(true)
     setTimeout(() => setShareCopied(false), 2000)
