@@ -17,6 +17,11 @@ export function buildShareText(theme: string, solveOrder: SolveStep[]): string {
     rows.push('‏' + squares.slice(i, i + ROW_WIDTH).join(''))
   }
 
-  return ['הצלחת כבר את האתגר היומי ב-מחרוזות?', `"${theme}"`, ...rows].join('\n')
+  return [
+    'הצלחת כבר את האתגר היומי ב-מחרוזות?',
+    `"${theme}"`,
+    ...rows,
+    'https://machrozot.vercel.app/',
+  ].join('\n')
 }
 

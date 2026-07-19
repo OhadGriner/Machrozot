@@ -21,6 +21,7 @@ describe('buildShareText', () => {
         '"בדיקה"',
         `${RLM}🟢🟣🟢`,
         `${RLM}💡`,
+        'https://machrozot.vercel.app/',
       ].join('\n')
     )
   })
@@ -28,6 +29,7 @@ describe('buildShareText', () => {
   it('marks a hinted mega machrozet with the lightbulb, not purple', () => {
     const solveOrder: SolveStep[] = [{ type: 'megaMachrozet', hinted: true }]
     const text = buildShareText('בדיקה', solveOrder)
-    expect(text.endsWith('💡')).toBe(true)
+    expect(text).toContain(`${RLM}💡`)
+    expect(text).not.toContain('🟣')
   })
 })
