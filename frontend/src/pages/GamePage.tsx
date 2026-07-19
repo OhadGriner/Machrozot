@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { api, progressApi } from '../api/client'
 import { useGameStore } from '../store/gameStore'
 import { useAuthStore } from '../store/authStore'
@@ -19,6 +19,7 @@ const TUTORIAL_SEEN_KEY = 'hasSeenTutorial'
 
 export default function GamePage() {
   const { date } = useParams<{ date?: string }>()
+  const navigate = useNavigate()
   const {
     puzzle, setPuzzle, foundWords, foundBonusWords, isComplete, solveOrder,
     hintsUsed, hintsEarned, nonThemeCount,
@@ -314,6 +315,18 @@ export default function GamePage() {
         >
           ?
         </button>
+        {user?.is_admin && (
+          <button
+            onClick={() => navigate('/admin')}
+            aria-label="ניהול"
+            title="ניהול"
+            className="absolute left-11 top-0 w-7 h-7 rounded-full bg-blue-100 text-blue-600 font-bold hover:bg-blue-200"
+          >
+            {/* U+FE0E forces the monochrome text glyph so the gear inherits
+                the button's blue instead of rendering as a color emoji */}
+            ⚙︎
+          </button>
+        )}
         <AuthButton />
         <img src="/complete-logo-01.png" alt="מחרוזות" className="h-11 mx-auto" />
       </header>
