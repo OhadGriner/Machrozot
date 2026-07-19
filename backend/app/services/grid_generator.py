@@ -2,7 +2,7 @@ import random
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from app.services.hebrew_utils import Cell
+from app.services.hebrew_utils import Cell, normalize_word
 
 ROWS, COLS = 8, 6
 TOTAL_CELLS = ROWS * COLS
@@ -352,6 +352,83 @@ def _place_word(
     )
 
 
+def _find_traces(grid: list[list[str]], word: str, limit: int) -> list[list[Coord]]:
+    """Every way `word` can be traced on the finished grid (any starting cell,
+    king-moves, no cell revisited) — the same search a player's finger does.
+    Stops once `limit` traces are found."""
+    target = normalize_word(word)
+    normalized_grid = [[normalize_word(letter) for letter in row] for row in grid]
+    traces: list[list[Coord]] = []
+
+    def dfs(coord: Coord, index: int, path: list[Coord], visited: set[Coord]) -> None:
+        if len(traces) >= limit:
+            return
+        if index == len(target):
+            traces.append(path.copy())
+            return
+        for neighbor in NEIGHBORS[coord]:
+            if neighbor in visited:
+                continue
+            if normalized_grid[neighbor[0]][neighbor[1]] != target[index]:
+                continue
+            visited.add(neighbor)
+            path.append(neighbor)
+            dfs(neighbor, index + 1, path, visited)
+            path.pop()
+            visited.remove(neighbor)
+
+    for start in ALL_COORDS:
+        if len(traces) >= limit:
+            break
+        if normalized_grid[start[0]][start[1]] != target[0]:
+            continue
+        dfs(start, 1, [start], {start})
+
+    return traces
+
+
+def _has_ambiguous_trace(grid: list[list[str]], word: str, committed_route: list[Coord]) -> bool:
+    """True if `word` can be traced anywhere on the board other than its own
+    committed path. The committed path's exact reverse is tolerated — a
+    palindrome is always traceable backwards along its own cells (same fill,
+    reversed order), and no regeneration could ever remove that."""
+    allowed = {tuple(committed_route), tuple(reversed(committed_route))}
+    # limit=3 suffices: committed + (possibly) its reverse + one extra proves ambiguity.
+    return any(tuple(trace) not in allowed for trace in _find_traces(grid, word, limit=3))
+
+
+def validate_word_set(mega_machrozet: str, words: list[str]) -> None:
+    """Every deterministic reason a word set can never be placed, checked up
+    front — callers (e.g. the admin create endpoint) run this synchronously so
+    the author gets an immediate 422 instead of a doomed background job."""
+    total_letters = len(mega_machrozet) + sum(len(word) for word in words)
+    if total_letters != TOTAL_CELLS:
+        raise GridGenerationError(
+            f"mega_machrozet+words length {total_letters} != {TOTAL_CELLS}"
+        )
+
+    # An embedded word can never satisfy the uniqueness rule: if word A (or
+    # its reverse) is a contiguous substring of word B, then wherever B is
+    # placed, A is traceable along that stretch of B's own path — every
+    # candidate layout would be rejected and the retry loop would spin
+    # forever. Fail fast with a clear message instead.
+    normalized_entries = [normalize_word(w) for w in (mega_machrozet, *words)]
+    for i, entry_a in enumerate(normalized_entries):
+        for j, entry_b in enumerate(normalized_entries):
+            if i == j:
+                continue
+            if entry_a in entry_b or entry_a[::-1] in entry_b:
+                raise GridGenerationError(
+                    f'המילה "{entry_a}" מוכלת בתוך "{entry_b}" — לא ניתן ליצור לוח שבו '
+                    f"לכל מילה יש נתיב יחיד"
+                )
+    if len(mega_machrozet) < MIN_MEGA_MACHROZET_LENGTH:
+        raise GridGenerationError(
+            f"mega_machrozet length {len(mega_machrozet)} cannot span opposite edges of an "
+            f"{ROWS}x{COLS} board (minimum is {MIN_MEGA_MACHROZET_LENGTH})"
+        )
+
+
 def generate_grid(
     mega_machrozet: str,
     words: list[str],
@@ -360,16 +437,7 @@ def generate_grid(
 
     Returns (grid, mega_machrozet_cells, word_cells).
     """
-    total_letters = len(mega_machrozet) + sum(len(word) for word in words)
-    if total_letters != TOTAL_CELLS:
-        raise GridGenerationError(
-            f"mega_machrozet+words length {total_letters} != {TOTAL_CELLS}"
-        )
-    if len(mega_machrozet) < MIN_MEGA_MACHROZET_LENGTH:
-        raise GridGenerationError(
-            f"mega_machrozet length {len(mega_machrozet)} cannot span opposite edges of an "
-            f"{ROWS}x{COLS} board (minimum is {MIN_MEGA_MACHROZET_LENGTH})"
-        )
+    validate_word_set(mega_machrozet, words)
 
     # Place longest words first — they're pickiest about available space.
     order = sorted(range(len(words)), key=lambda index: -len(words[index]))
@@ -407,6 +475,17 @@ def generate_grid(
             )
 
         if placement_failed:
+            continue
+
+        # Global uniqueness: every answer word must have exactly one trace on
+        # the finished board. The step-level fork check above can't catch a
+        # full alternate path starting somewhere else entirely — and since the
+        # client validates by exact cell path, a player tracing such a
+        # duplicate would spell the word correctly yet be rejected.
+        all_routes = [(mega_machrozet, state.mega_machrozet_route)] + [
+            (words[i], state.word_routes[i]) for i in range(len(words))
+        ]
+        if any(_has_ambiguous_trace(state.grid, word, route) for word, route in all_routes):
             continue
 
         mega_machrozet_cells = _cells_from_coords(state.mega_machrozet_route)

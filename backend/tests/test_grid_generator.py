@@ -7,6 +7,8 @@ from app.services.grid_generator import (
     COLS,
     ROWS,
     GridGenerationError,
+    _find_traces,
+    _has_ambiguous_trace,
     generate_grid,
     touches_opposite_edges,
 )
@@ -15,11 +17,13 @@ from app.services.hebrew_utils import Cell, word_from_cells
 ALPHABET = list("אבגדהוזחטיכלמנסעפצקרשת")  # 22 letters, no nikud/final forms
 
 
-def make_word(length: int, offset: int = 0) -> str:
+def make_word(length: int, offset: int = 0, stride: int = 1) -> str:
     """Build a word of `length` letters cycling the alphabet, starting `offset`
-    positions into the cycle (so different calls produce varied, non-colliding
-    content rather than every word starting with the same letter)."""
-    return "".join(ALPHABET[(offset + i) % len(ALPHABET)] for i in range(length))
+    positions into the cycle and stepping `stride` letters at a time. Distinct
+    strides matter since the uniqueness rule fast-fails when one word (or its
+    reverse) is a contiguous substring of another — with a shared stride of 1,
+    consecutive alphabet runs inevitably embed each other."""
+    return "".join(ALPHABET[(offset + i * stride) % len(ALPHABET)] for i in range(length))
 
 
 def neighbors(row: int, col: int):
@@ -123,6 +127,22 @@ def test_fast_fail_on_total_length_mismatch():
         generate_grid("תפוח", ["אגס"])
 
 
+def test_fast_fail_on_embedded_word():
+    # "וחיל" is a contiguous substring of the mega machrozet's letters below —
+    # wherever the longer one is placed, the shorter is traceable along its
+    # own path, so the uniqueness rule could never be satisfied. Must fail
+    # fast instead of retrying forever.
+    words = [make_word(length=n, offset=(i + 1) * 5, stride=i + 2) for i, n in enumerate([5, 6, 6, 5, 6, 8])]
+    with pytest.raises(GridGenerationError):
+        generate_grid("אבגדהוזח", ["בגדה", *words])
+
+
+def test_fast_fail_on_reversed_embedded_word():
+    words = [make_word(length=n, offset=(i + 1) * 5, stride=i + 2) for i, n in enumerate([5, 6, 6, 5, 6, 8])]
+    with pytest.raises(GridGenerationError):
+        generate_grid("אבגדהוזח", ["הדגב", *words])
+
+
 def test_fast_fail_on_mega_machrozet_too_short():
     words = [make_word(length=9, offset=i * 9) for i in range(5)]  # 5*9 = 45
     with pytest.raises(GridGenerationError):
@@ -142,7 +162,7 @@ def test_single_theme_word_full_generation():
     # close to a Hamiltonian path, which the current true-backtracking
     # engine can take well over a minute to find.
     mega_machrozet = make_word(length=10)
-    words = [make_word(length=38, offset=10)]
+    words = [make_word(length=38, offset=5, stride=3)]
     grid, mega_machrozet_cells, word_cells = generate_grid(mega_machrozet, words)
     assert_valid_layout(grid, mega_machrozet, mega_machrozet_cells, words, word_cells)
 
@@ -169,7 +189,7 @@ def test_full_roundtrip_typical_puzzle():
     # but occasionally slow with the current true-backtracking algorithm.
     mega_machrozet = make_word(length=8)
     lengths = [4, 5, 6, 6, 5, 6, 8]  # sums to 40; + mega_machrozet(8) = 48
-    words = [make_word(length=n, offset=8 + i * 3) for i, n in enumerate(lengths)]
+    words = [make_word(length=n, offset=(i + 1) * 5, stride=i + 2) for i, n in enumerate(lengths)]
     grid, mega_machrozet_cells, word_cells = generate_grid(mega_machrozet, words)
     assert_valid_layout(grid, mega_machrozet, mega_machrozet_cells, words, word_cells)
 
@@ -182,10 +202,10 @@ def test_word_with_internal_doubled_letter_is_allowed():
     # split (one huge word against tiny ones) is a much harder, unrelated
     # bin-packing problem — not what this test is meant to exercise.
     mega_machrozet = make_word(length=8)
-    doubled_word = "אא" + make_word(length=2, offset=1)  # length 4, starts with two identical letters
+    doubled_word = "אאגט"  # length 4, starts with two identical letters
     other_lengths = [5, 6, 6, 5, 6, 8]  # sums to 36; + doubled_word(4) = 40; + mega_machrozet(8) = 48
     words = [doubled_word] + [
-        make_word(length=n, offset=8 + i * 3) for i, n in enumerate(other_lengths)
+        make_word(length=n, offset=(i + 1) * 5, stride=i + 2) for i, n in enumerate(other_lengths)
     ]
     assert len(mega_machrozet) + sum(len(word) for word in words) == 48
     grid, mega_machrozet_cells, word_cells = generate_grid(mega_machrozet, words)
@@ -203,7 +223,7 @@ def test_cross_word_letter_collisions_never_appear_in_output():
     # rejection-and-retry logic actually filters collisions out reliably.
     mega_machrozet = make_word(length=8)
     lengths = [4, 5, 6, 6, 5, 6, 8]  # sums to 40; + mega_machrozet(8) = 48
-    words = [make_word(length=n, offset=8 + i * 2) for i, n in enumerate(lengths)]
+    words = [make_word(length=n, offset=(i + 1) * 5, stride=i + 2) for i, n in enumerate(lengths)]
     assert len(mega_machrozet) + sum(len(word) for word in words) == 48
 
     for seed in range(2):
@@ -215,12 +235,13 @@ def test_cross_word_letter_collisions_never_appear_in_output():
 SMALL_ALPHABET = ALPHABET[:10]  # only 10 distinct letters, to force heavy reuse
 
 
-def make_word_from_small_alphabet(length: int, offset: int = 0) -> str:
+def make_word_from_small_alphabet(length: int, offset: int = 0, stride: int = 1) -> str:
     """Like make_word, but cycles only the first 10 letters — used to stress
     *cross-word* letter reuse. Word lengths here must stay <= 10 so no single
     word repeats a letter internally (that's a different, much harder
-    self-avoidance problem, tested separately)."""
-    return "".join(SMALL_ALPHABET[(offset + i) % len(SMALL_ALPHABET)] for i in range(length))
+    self-avoidance problem, tested separately). Strides must be coprime with
+    10 (1/3/7/9) to preserve that no-internal-repeat property."""
+    return "".join(SMALL_ALPHABET[(offset + i * stride) % len(SMALL_ALPHABET)] for i in range(length))
 
 
 @pytest.mark.slow
@@ -231,9 +252,12 @@ def test_many_repeated_letters_terminates_within_budget():
     # collision avoidance, without any single word's own internal shape being
     # unrealistically constrained (each word length stays within the 10-letter
     # cycle, so no word repeats a letter against itself).
-    mega_machrozet = make_word_from_small_alphabet(length=8)
-    lengths = [4, 5, 6, 6, 5, 6, 8]  # sums to 40; + mega_machrozet(8) = 48
-    words = [make_word_from_small_alphabet(length=n, offset=8 + i * 2) for i, n in enumerate(lengths)]
+    mega_machrozet = make_word_from_small_alphabet(length=8, offset=7, stride=9)
+    # (offset, stride) pairs verified conflict-free: with only 10 letters, most
+    # configurations embed one word inside another (or its reverse), which the
+    # uniqueness rule now fast-fails as unplaceable.
+    shapes = [(4, 2, 3), (5, 0, 7), (6, 6, 7), (6, 8, 9), (5, 5, 1), (6, 9, 7), (8, 8, 7)]
+    words = [make_word_from_small_alphabet(length=n, offset=o, stride=s) for n, o, s in shapes]
     assert len(mega_machrozet) + sum(len(word) for word in words) == 48
 
     start = time.monotonic()
@@ -254,9 +278,12 @@ def test_no_cell_has_two_neighbors_matching_its_real_next_letter():
     # test_many_repeated_letters_terminates_within_budget (known to stress
     # cross-word letter reuse the hardest), run across several seeds so a
     # lucky single layout can't mask the rejection-and-retry logic failing.
-    mega_machrozet = make_word_from_small_alphabet(length=8)
-    lengths = [4, 5, 6, 6, 5, 6, 8]  # sums to 40; + mega_machrozet(8) = 48
-    words = [make_word_from_small_alphabet(length=n, offset=8 + i * 2) for i, n in enumerate(lengths)]
+    mega_machrozet = make_word_from_small_alphabet(length=8, offset=7, stride=9)
+    # (offset, stride) pairs verified conflict-free: with only 10 letters, most
+    # configurations embed one word inside another (or its reverse), which the
+    # uniqueness rule now fast-fails as unplaceable.
+    shapes = [(4, 2, 3), (5, 0, 7), (6, 6, 7), (6, 8, 9), (5, 5, 1), (6, 9, 7), (8, 8, 7)]
+    words = [make_word_from_small_alphabet(length=n, offset=o, stride=s) for n, o, s in shapes]
     assert len(mega_machrozet) + sum(len(word) for word in words) == 48
 
     for seed in range(2):
@@ -292,3 +319,62 @@ def test_performance_with_real_yafe_einaim_words():
     print(f"\n{trial_count} trials — min: {min(elapsed_times):.4f}s, "
           f"max: {max(elapsed_times):.4f}s, avg: {sum(elapsed_times) / trial_count:.4f}s, "
           f"total: {sum(elapsed_times):.4f}s")
+
+
+def _filler_grid() -> list[list[str]]:
+    """8x6 grid of distinct-ish filler letters that can't accidentally spell
+    the planted test words (which use letters absent from the filler set)."""
+    filler = "קרשתסעפצ"
+    return [[filler[(row * COLS + col) % len(filler)] for col in range(COLS)] for row in range(ROWS)]
+
+
+def test_find_traces_finds_a_single_planted_path():
+    grid = _filler_grid()
+    route = [(0, 0), (0, 1), (1, 2)]
+    for (row, col), letter in zip(route, "אבג"):
+        grid[row][col] = letter
+
+    traces = _find_traces(grid, "אבג", limit=3)
+    assert traces == [route]
+
+
+def test_has_ambiguous_trace_detects_a_duplicate_elsewhere():
+    grid = _filler_grid()
+    route = [(0, 0), (0, 1), (1, 2)]
+    for (row, col), letter in zip(route, "אבג"):
+        grid[row][col] = letter
+    # The same word traceable in a far corner of the board.
+    for (row, col), letter in zip([(7, 5), (7, 4), (6, 3)], "אבג"):
+        grid[row][col] = letter
+
+    assert _has_ambiguous_trace(grid, "אבג", route)
+
+
+def test_has_ambiguous_trace_detects_alternate_start_into_shared_tail():
+    # The user-reported shape: the word's tail is shared, but a decoy first
+    # letter lets the trace start from a second location.
+    grid = _filler_grid()
+    route = [(2, 2), (2, 3), (2, 4)]
+    for (row, col), letter in zip(route, "אבג"):
+        grid[row][col] = letter
+    grid[3][2] = "א"  # second א also adjacent to the ב at (2,3)
+
+    assert _has_ambiguous_trace(grid, "אבג", route)
+
+
+def test_palindrome_reverse_of_own_path_is_not_ambiguous():
+    grid = _filler_grid()
+    route = [(0, 0), (0, 1), (0, 2)]
+    for (row, col), letter in zip(route, "אבא"):
+        grid[row][col] = letter
+
+    assert not _has_ambiguous_trace(grid, "אבא", route)
+
+
+def test_unique_path_is_not_ambiguous():
+    grid = _filler_grid()
+    route = [(4, 0), (5, 1), (4, 2), (3, 3)]
+    for (row, col), letter in zip(route, "אבגד"):
+        grid[row][col] = letter
+
+    assert not _has_ambiguous_trace(grid, "אבגד", route)

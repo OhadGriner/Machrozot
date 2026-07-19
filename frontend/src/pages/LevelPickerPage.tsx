@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { adminApi } from '../api/adminClient'
 import { useRequireAdmin } from '../hooks/useRequireAdmin'
-import type { LevelSummary } from '../api/adminClient'
+import type { AdminJob, LevelSummary } from '../api/adminClient'
 
 function formatDate(d: string) {
   return new Date(d + 'T12:00:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'short' })
@@ -18,16 +18,20 @@ export default function LevelPickerPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [assigning, setAssigning] = useState<number | null>(null)
+  const [jobs, setJobs] = useState<AdminJob[]>([])
+  const jobsPollRef = useRef<number | null>(null)
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const [levelList, current] = await Promise.all([
+      const [levelList, current, jobList] = await Promise.all([
         adminApi.getLevels(),
         date ? adminApi.getScheduledLevel(date).catch(() => null) : Promise.resolve(null),
+        adminApi.getJobs().catch(() => []),
       ])
       setLevels(levelList)
       setCurrentId(current?.id ?? null)
+      setJobs(jobList)
     } catch (e) {
       if (e instanceof Error && e.message === 'Unauthorized') {
         navigate('/admin/login')
@@ -40,6 +44,22 @@ export default function LevelPickerPage() {
   }, [date, navigate])
 
   useEffect(() => { if (isAdmin) load() }, [isAdmin, load])
+
+  // While any generation/shuffle job is running, keep polling: the elapsed
+  // timer climbs (server-side, so it survives navigation), and when a job
+  // finishes it drops out of the jobs list — at which point the freshly
+  // created level appears via the same load().
+  useEffect(() => {
+    if (!jobs.some((job) => job.status === 'pending')) return
+    jobsPollRef.current = window.setTimeout(load, 2000)
+    return () => {
+      if (jobsPollRef.current !== null) window.clearTimeout(jobsPollRef.current)
+    }
+  }, [jobs, load])
+
+  // One in-flight/errored job per puzzle at most (the store tracks the
+  // latest per puzzle) — mapped by id so each level row can show its badge.
+  const jobsByPuzzle = new Map(jobs.filter((j) => j.puzzle_id != null).map((j) => [j.puzzle_id, j]))
 
   const pickLevel = async (puzzleId: number) => {
     if (!date) return
@@ -101,6 +121,7 @@ export default function LevelPickerPage() {
         {levels.map((level) => {
           const isScheduled = level.scheduled_dates.length > 0
           const isCurrent = date != null && level.id === currentId
+          const job = jobsByPuzzle.get(level.id)
           return (
             <div key={level.id} className="flex items-center gap-2">
               <button
@@ -110,7 +131,17 @@ export default function LevelPickerPage() {
                   isScheduled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500'
                 } ${isCurrent ? 'ring-2 ring-blue-500' : ''}`}
               >
-                <div>#{level.id} · {level.theme}</div>
+                <div>
+                  #{level.id} · {level.theme}
+                  {job?.status === 'pending' && (
+                    <span title={job.kind === 'create' ? 'הלוח נוצר' : 'הלוח מתערבב'}>
+                      {' '}{job.kind === 'create' ? '🧩' : '🔀'}
+                    </span>
+                  )}
+                  {job?.status === 'error' && (
+                    <span title={job.detail}> ⚠️</span>
+                  )}
+                </div>
                 {isScheduled && (
                   <div className="text-xs font-normal mt-0.5">
                     {level.scheduled_dates.map(formatDate).join(', ')}

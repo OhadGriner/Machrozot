@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.services import puzzle_service
+from app.services import job_store, puzzle_service
 from app.services.hebrew_utils import Cell, word_from_cells
 
 
@@ -34,13 +34,50 @@ async def _await_shuffle(
 _ALPHABET = "אבגדהוזחטיכלמנסעפצקרשת"
 
 
-def _fast_word(length: int, offset: int = 0) -> str:
+def _fast_word(length: int, offset: int = 0, stride: int = 1) -> str:
     """Cycles through the alphabet — the same word-list shape
     test_grid_generator.py's test_full_roundtrip_typical_puzzle uses, proven
-    to place quickly. Real (unmocked) content like the seeded יפה עיניים
-    puzzle can legitimately take up to a couple of minutes per call with the
-    current backtracking algorithm — too slow for routine test runs."""
-    return "".join(_ALPHABET[(offset + i) % len(_ALPHABET)] for i in range(length))
+    to place quickly. Distinct strides keep any word from being a contiguous
+    substring of another, which the uniqueness rule fast-fails as unplaceable.
+    Real (unmocked) content like the seeded יפה עיניים puzzle can legitimately
+    take up to a couple of minutes per call — too slow for routine test runs."""
+    return "".join(_ALPHABET[(offset + i * stride) % len(_ALPHABET)] for i in range(length))
+
+
+def _words_payload(theme: str = "פירות") -> dict:
+    """A 48-letter payload (8 + 4+5+6+6+5+6+8) — creation now validates the
+    total length synchronously before spawning the background job, so even
+    stubbed-generator tests must send a board-sized word list."""
+    return {
+        "theme": theme,
+        "mega_machrozet": _fast_word(8),
+        "words": [
+            _fast_word(n, offset=(i + 1) * 5, stride=i + 2)
+            for i, n in enumerate([4, 5, 6, 6, 5, 6, 8])
+        ],
+    }
+
+
+async def _await_creation(
+    api: AsyncClient, admin_headers: dict, payload: dict, timeout_seconds: float = 180
+) -> dict:
+    """Creation is async now: POST answers 202 with a job, the grid appears
+    when the background generation finishes. Polls the in-process job store
+    (the tests share the app's event loop, so sleeping lets the job run) and
+    returns the finished PuzzleGridDetail as a plain dict."""
+    response = await api.post("/api/admin/puzzles", json=payload, headers=admin_headers)
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    deadline = asyncio.get_event_loop().time() + timeout_seconds
+    while asyncio.get_event_loop().time() < deadline:
+        job = job_store.get_job(job_id)
+        assert job is not None, "job vanished while pending"
+        if job.status == "error":
+            raise AssertionError(f"creation failed: {job.detail}")
+        if job.status == "done":
+            return job.result.model_dump(mode="json")
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"creation did not complete within {timeout_seconds}s")
 
 
 @pytest.fixture
@@ -112,13 +149,7 @@ async def test_create_level_returns_422_for_words_that_dont_fit_the_board(
 
 
 async def test_create_level_persists_via_stubbed_algorithm(api: AsyncClient, admin_headers, stub_generate_grid):
-    response = await api.post(
-        "/api/admin/puzzles",
-        json={"theme": "פירות", "mega_machrozet": "תפוח", "words": ["אגס"]},
-        headers=admin_headers,
-    )
-    assert response.status_code == 201
-    data = response.json()
+    data = await _await_creation(api, admin_headers, _words_payload())
     assert data["theme"] == "פירות"
     assert data["grid"] == stub_generate_grid[0]
 
@@ -136,15 +167,11 @@ async def test_create_level_with_real_algorithm_end_to_end(api: AsyncClient, adm
     # module, so even this "fast" shape has real run-to-run variance.
     theme = "פירות"
     mega_machrozet = _fast_word(8)
-    words = [_fast_word(n, offset=8 + i * 3) for i, n in enumerate([4, 5, 6, 6, 5, 6, 8])]
+    words = [_fast_word(n, offset=(i + 1) * 5, stride=i + 2) for i, n in enumerate([4, 5, 6, 6, 5, 6, 8])]
 
-    response = await api.post(
-        "/api/admin/puzzles",
-        json={"theme": theme, "mega_machrozet": mega_machrozet, "words": words},
-        headers=admin_headers,
+    data = await _await_creation(
+        api, admin_headers, {"theme": theme, "mega_machrozet": mega_machrozet, "words": words}
     )
-    assert response.status_code == 201
-    data = response.json()
     assert data["theme"] == theme
     assert len(data["grid"]) == 8
     assert all(len(row) == 6 for row in data["grid"])
@@ -165,14 +192,10 @@ async def test_shuffle_level_rearranges_same_words_keeping_same_id(api: AsyncCli
     # `random` module, so even this "fast" shape has real run-to-run variance.
     theme = "פירות"
     mega_machrozet = _fast_word(8)
-    words = [_fast_word(n, offset=8 + i * 3) for i, n in enumerate([4, 5, 6, 6, 5, 6, 8])]
-    created = (
-        await api.post(
-            "/api/admin/puzzles",
-            json={"theme": theme, "mega_machrozet": mega_machrozet, "words": words},
-            headers=admin_headers,
-        )
-    ).json()
+    words = [_fast_word(n, offset=(i + 1) * 5, stride=i + 2) for i, n in enumerate([4, 5, 6, 6, 5, 6, 8])]
+    created = await _await_creation(
+        api, admin_headers, {"theme": theme, "mega_machrozet": mega_machrozet, "words": words}
+    )
 
     result = await _await_shuffle(api, created["id"], admin_headers)
     assert result["status"] == "done"
@@ -193,13 +216,7 @@ async def test_shuffle_level_updates_the_calendar_pointer(
     # The calendar looks up a day's puzzle by id via the schedule table, so
     # shuffling (which mutates the same puzzle row) must be visible there
     # without touching the schedule itself.
-    created = (
-        await api.post(
-            "/api/admin/puzzles",
-            json={"theme": "פירות", "mega_machrozet": "תפוח", "words": ["אגס"]},
-            headers=admin_headers,
-        )
-    ).json()
+    created = await _await_creation(api, admin_headers, _words_payload())
     await api.post(
         "/api/admin/schedule/2026-07-20", json={"puzzle_id": created["id"]}, headers=admin_headers
     )
@@ -225,20 +242,20 @@ async def test_shuffle_level_not_found(api: AsyncClient, admin_headers):
     assert response.status_code == 404
 
 
-async def test_shuffle_status_is_none_before_any_shuffle(
+async def test_status_reflects_the_creation_job_before_any_shuffle(
     api: AsyncClient, admin_headers, stub_generate_grid
 ):
-    created = (
-        await api.post(
-            "/api/admin/puzzles",
-            json={"theme": "פירות", "mega_machrozet": "תפוח", "words": ["אגס"]},
-            headers=admin_headers,
-        )
-    ).json()
+    # Creation itself is a generation job on the puzzle now, so the per-puzzle
+    # status endpoint reports it (done) rather than "none" — that's what lets
+    # the grid view show a freshly-created level's progress/result uniformly.
+    created = await _await_creation(api, admin_headers, _words_payload())
 
     response = await api.get(f"/api/admin/puzzles/{created['id']}/shuffle-status", headers=admin_headers)
     assert response.status_code == 200
-    assert response.json()["status"] == "none"
+    body = response.json()
+    assert body["status"] == "done"
+    assert body["kind"] == "create"
+    assert body["puzzle_id"] == created["id"]
 
 
 async def test_shuffle_reports_elapsed_time_and_resumes_without_duplicating_work(
@@ -248,13 +265,7 @@ async def test_shuffle_reports_elapsed_time_and_resumes_without_duplicating_work
     # second POST (simulating the admin navigating away and back, or a page
     # reload, while a shuffle is still running) resumes watching the same
     # job instead of kicking off a wasteful duplicate placement run.
-    created = (
-        await api.post(
-            "/api/admin/puzzles",
-            json={"theme": "פירות", "mega_machrozet": "תפוח", "words": ["אגס"]},
-            headers=admin_headers,
-        )
-    ).json()
+    created = await _await_creation(api, admin_headers, _words_payload())
 
     call_count = 0
 
@@ -285,13 +296,7 @@ async def test_shuffle_reports_elapsed_time_and_resumes_without_duplicating_work
 async def test_shuffle_level_propagates_grid_generation_error(
     api: AsyncClient, admin_headers, stub_generate_grid, monkeypatch
 ):
-    created = (
-        await api.post(
-            "/api/admin/puzzles",
-            json={"theme": "פירות", "mega_machrozet": "תפוח", "words": ["אגס"]},
-            headers=admin_headers,
-        )
-    ).json()
+    created = await _await_creation(api, admin_headers, _words_payload())
 
     def fail(mega_machrozet, words):
         from app.services.grid_generator import GridGenerationError
@@ -406,3 +411,99 @@ async def test_schedule_unassign_removes_only_that_date(
 async def test_schedule_unassign_not_found(api: AsyncClient, admin_headers):
     response = await api.delete("/api/admin/schedule/2026-06-15", headers=admin_headers)
     assert response.status_code == 404
+
+
+async def test_pending_creation_appears_in_jobs_with_metadata(
+    api: AsyncClient, admin_headers, stub_generate_grid, monkeypatch
+):
+    payload = _words_payload(theme="חיות")
+
+    def slow(mega_machrozet, words):
+        time.sleep(0.3)
+        return stub_generate_grid
+
+    monkeypatch.setattr("app.routers.admin.generate_grid", slow)
+    response = await api.post("/api/admin/puzzles", json=payload, headers=admin_headers)
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+
+    await asyncio.sleep(0.05)
+    jobs = (await api.get("/api/admin/jobs", headers=admin_headers)).json()
+    entry = next(j for j in jobs if j["job_id"] == job_id)
+    assert entry["kind"] == "create"
+    assert entry["status"] == "pending"
+    assert entry["theme"] == "חיות"
+    assert entry["mega_machrozet"] == payload["mega_machrozet"]
+    assert entry["words"] == payload["words"]
+    assert entry["elapsed_seconds"] > 0
+
+    # Wait for completion — once done, the job drops out of the list and the
+    # level exists in the regular levels listing instead.
+    deadline = asyncio.get_event_loop().time() + 30
+    while job_store.get_job(job_id).status == "pending":
+        assert asyncio.get_event_loop().time() < deadline
+        await asyncio.sleep(0.05)
+    jobs_after = (await api.get("/api/admin/jobs", headers=admin_headers)).json()
+    assert all(j["job_id"] != job_id for j in jobs_after)
+    listed = (await api.get("/api/admin/puzzles", headers=admin_headers)).json()
+    assert any(p["theme"] == "חיות" for p in listed)
+
+
+async def test_failed_creation_is_listed_and_dismissible(
+    api: AsyncClient, admin_headers, monkeypatch
+):
+    def fail(mega_machrozet, words):
+        from app.services.grid_generator import GridGenerationError
+        raise GridGenerationError("no valid layout")
+
+    monkeypatch.setattr("app.routers.admin.generate_grid", fail)
+    response = await api.post("/api/admin/puzzles", json=_words_payload(), headers=admin_headers)
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+
+    deadline = asyncio.get_event_loop().time() + 30
+    while job_store.get_job(job_id).status == "pending":
+        assert asyncio.get_event_loop().time() < deadline
+        await asyncio.sleep(0.05)
+
+    jobs = (await api.get("/api/admin/jobs", headers=admin_headers)).json()
+    entry = next(j for j in jobs if j["job_id"] == job_id)
+    assert entry["status"] == "error"
+    assert entry["detail"] == "no valid layout"
+
+    assert (await api.delete(f"/api/admin/jobs/{job_id}", headers=admin_headers)).status_code == 204
+    jobs_after = (await api.get("/api/admin/jobs", headers=admin_headers)).json()
+    assert all(j["job_id"] != job_id for j in jobs_after)
+
+
+async def test_dismiss_unknown_job_is_404(api: AsyncClient, admin_headers):
+    response = await api.delete("/api/admin/jobs/nosuchjob", headers=admin_headers)
+    assert response.status_code == 404
+
+
+async def test_jobs_endpoints_require_admin(api: AsyncClient):
+    assert (await api.get("/api/admin/jobs")).status_code == 401
+    assert (await api.delete("/api/admin/jobs/x")).status_code == 401
+
+
+async def test_pending_shuffle_appears_in_jobs_with_metadata(
+    api: AsyncClient, admin_headers, stub_generate_grid, monkeypatch
+):
+    created = await _await_creation(api, admin_headers, _words_payload())
+
+    def slow(mega_machrozet, words):
+        time.sleep(0.3)
+        return stub_generate_grid
+
+    monkeypatch.setattr("app.routers.admin.generate_grid", slow)
+    started = await api.post(f"/api/admin/puzzles/{created['id']}/shuffle", headers=admin_headers)
+    assert started.status_code == 202
+
+    await asyncio.sleep(0.05)
+    jobs = (await api.get("/api/admin/jobs", headers=admin_headers)).json()
+    entry = next(j for j in jobs if j["kind"] == "shuffle")
+    assert entry["status"] == "pending"
+    assert entry["theme"] == "פירות"
+    assert entry["words"]
+
+    await _await_shuffle(api, created["id"], admin_headers)

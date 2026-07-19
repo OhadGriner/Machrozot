@@ -46,7 +46,9 @@ export default function LevelEditorPage() {
   const canSave = !!theme.trim() && !!megaMachrozet.trim() && words.length >= 1 && committedLetters === TOTAL_LETTERS
 
   const goBack = useCallback(() => {
-    navigate(fromDate ? `/admin/levels/${fromDate}` : '/admin')
+    // Land on the levels list either way — that's where the in-progress
+    // generation job (with its live timer) is visible.
+    navigate(fromDate ? `/admin/levels/${fromDate}` : '/admin/levels')
   }, [navigate, fromDate])
 
   const handleSave = async () => {
@@ -55,9 +57,12 @@ export default function LevelEditorPage() {
     setErrorMessage('')
     const payload = { theme: theme.trim(), mega_machrozet: megaMachrozet.trim(), words }
     try {
+      // The server answers immediately with a background job — generation
+      // itself takes minutes and is watched from the levels list, so the
+      // editor can be left right away.
       await adminApi.createLevel(payload)
       setSaveStatus('saved')
-      setTimeout(goBack, 1200)
+      setTimeout(goBack, 600)
     } catch (e) {
       setSaveStatus('error')
       setErrorMessage(e instanceof Error ? e.message : 'שגיאה בשמירה')
@@ -154,7 +159,7 @@ export default function LevelEditorPage() {
         }`}
       >
         {saveStatus === 'saving' ? 'שומר...' :
-         saveStatus === 'saved'  ? '✓ נשמר!' :
+         saveStatus === 'saved'  ? '✓ היצירה החלה!' :
          saveStatus === 'error'  ? 'שגיאה בשמירה' : 'שמור פאזל'}
       </button>
     </div>

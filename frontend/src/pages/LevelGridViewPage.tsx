@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { adminApi } from '../api/adminClient'
 import { useRequireAdmin } from '../hooks/useRequireAdmin'
 import SelectionLine from '../components/SelectionLine'
-import type { LevelGridDetail, ShuffleStatus } from '../api/adminClient'
+import type { AdminJob, LevelGridDetail } from '../api/adminClient'
 import type { WordLine } from '../store/gameStore'
 
 type CellPos = { row: number; col: number }
@@ -39,8 +39,9 @@ export default function LevelGridViewPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [unassigning, setUnassigning] = useState(false)
-  const [shuffling, setShuffling] = useState(false)
-  const [shuffleElapsed, setShuffleElapsed] = useState(0)
+  // The in-flight generation job (creation or shuffle), if any — while it
+  // runs, the grid is hidden and a status card with a live timer shows.
+  const [activeJob, setActiveJob] = useState<AdminJob | null>(null)
   const pollRef = useRef<number | null>(null)
 
   const load = useCallback(async () => {
@@ -70,22 +71,20 @@ export default function LevelGridViewPage() {
     adminApi.getShuffleStatus(puzzleId)
       .then((status) => applyShuffleStatus(puzzleId, status))
       .catch((e) => {
-        setError(e instanceof Error ? e.message : 'שגיאה בערבוב הלוח')
-        setShuffling(false)
+        setError(e instanceof Error ? e.message : 'שגיאה ביצירת הלוח')
+        setActiveJob(null)
       })
   }, [])
 
-  const applyShuffleStatus = useCallback((puzzleId: number, status: ShuffleStatus) => {
+  const applyShuffleStatus = useCallback((puzzleId: number, status: AdminJob) => {
     if (status.status === 'pending') {
-      setShuffling(true)
-      setShuffleElapsed(status.elapsed_seconds)
+      setActiveJob(status)
       pollRef.current = window.setTimeout(() => tick(puzzleId), 1500)
       return
     }
-    setShuffling(false)
-    setShuffleElapsed(0)
+    setActiveJob(null)
     if (status.status === 'done' && status.puzzle) setPuzzle(status.puzzle)
-    if (status.status === 'error') setError(status.detail || 'שגיאה בערבוב הלוח')
+    if (status.status === 'error') setError(status.detail || 'שגיאה ביצירת הלוח')
   }, [tick])
 
   // Resume-on-mount: if a shuffle was already running for this puzzle (the
@@ -95,7 +94,13 @@ export default function LevelGridViewPage() {
     if (!puzzle) return
     let cancelled = false
     adminApi.getShuffleStatus(puzzle.id).then((status) => {
-      if (!cancelled && status.status === 'pending') applyShuffleStatus(puzzle.id, status)
+      if (cancelled) return
+      if (status.status === 'pending') applyShuffleStatus(puzzle.id, status)
+      // A failed creation leaves the level grid-less — surface why. (An old
+      // shuffle error on a healthy grid isn't worth re-showing on every visit.)
+      else if (status.status === 'error' && puzzle.grid.length === 0) {
+        setError(status.detail || 'היצירה נכשלה')
+      }
     }).catch(() => {})
     return () => {
       cancelled = true
@@ -161,6 +166,16 @@ export default function LevelGridViewPage() {
     )
   }
 
+  const hasGrid = puzzle.grid.length > 0
+  // While a creation job runs there's no grid yet — the words shown come
+  // from the job itself rather than being read off the board.
+  const megaMachrozetWord = hasGrid
+    ? wordFromGrid(puzzle.grid, puzzle.mega_machrozet_cells)
+    : activeJob?.mega_machrozet ?? ''
+  const themeWords = hasGrid
+    ? puzzle.word_cells.map((cells) => wordFromGrid(puzzle.grid, cells))
+    : activeJob?.words ?? []
+
   const assignedMap = new Map<string, CellVisual>()
   puzzle.mega_machrozet_cells.forEach((c) => assignedMap.set(cellKey(c), 'megaMachrozet'))
   puzzle.word_cells.forEach((cells) => cells.forEach((c) => assignedMap.set(cellKey(c), 'word')))
@@ -183,13 +198,27 @@ export default function LevelGridViewPage() {
         <div className="text-lg font-bold">#{puzzle.id} · {puzzle.theme}</div>
       </div>
 
-      <button
-        onClick={shuffleBoard}
-        disabled={shuffling}
-        className="w-full max-w-sm py-2 rounded-xl font-bold text-sm bg-purple-100 text-purple-800 hover:bg-purple-200 disabled:opacity-50"
-      >
-        {shuffling ? `מערבב... (${formatElapsed(shuffleElapsed)})` : '🔀 ערבב לוח'}
-      </button>
+      {activeJob ? (
+        <div className="w-full max-w-sm rounded-xl bg-purple-50 border-2 border-purple-100 px-4 py-3 text-center">
+          <div className="font-bold text-purple-800">
+            {activeJob.kind === 'create' ? '🧩 הלוח נוצר...' : '🔀 הלוח מתערבב...'}
+          </div>
+          <div className="text-sm font-mono text-purple-600 mt-1">
+            {formatElapsed(activeJob.elapsed_seconds)}
+          </div>
+        </div>
+      ) : hasGrid ? (
+        <button
+          onClick={shuffleBoard}
+          className="w-full max-w-sm py-2 rounded-xl font-bold text-sm bg-purple-100 text-purple-800 hover:bg-purple-200"
+        >
+          🔀 ערבב לוח
+        </button>
+      ) : (
+        <div className="w-full max-w-sm text-sm text-gray-500 text-center">
+          היצירה לא הושלמה — מחקו את הפאזל ונסו שוב
+        </div>
+      )}
 
       {error && <div className="w-full max-w-sm text-sm text-red-500 text-center">{error}</div>}
 
@@ -211,6 +240,7 @@ export default function LevelGridViewPage() {
         </div>
       )}
 
+      {hasGrid && !activeJob && (
       <div className="relative inline-block" style={{ zIndex: 0 }}>
         <SelectionLine cols={puzzle.grid[0]?.length ?? 0} selectedCells={[]} foundWordLines={wordLines} />
         <div ref={gridContainerRef} className="flex flex-col items-center gap-2 select-none">
@@ -236,17 +266,18 @@ export default function LevelGridViewPage() {
           ))}
         </div>
       </div>
+      )}
 
       <div className="w-full max-w-sm bg-white rounded-2xl border-2 border-gray-100 p-3 flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-gray-400">מילים</h2>
         <div className="flex items-center gap-2">
           <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 bg-purple-100 text-purple-800">מגה מחרוזת</span>
-          <span className="flex-1 text-base font-bold text-center">{wordFromGrid(puzzle.grid, puzzle.mega_machrozet_cells)}</span>
+          <span className="flex-1 text-base font-bold text-center">{megaMachrozetWord}</span>
         </div>
-        {puzzle.word_cells.map((cells, i) => (
+        {themeWords.map((word, i) => (
           <div key={i} className="flex items-center gap-2">
             <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 bg-green-100 text-green-800">מילה</span>
-            <span className="flex-1 text-base font-bold text-center">{wordFromGrid(puzzle.grid, cells)}</span>
+            <span className="flex-1 text-base font-bold text-center">{word}</span>
           </div>
         ))}
       </div>

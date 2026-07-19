@@ -56,9 +56,18 @@ export interface LevelGridDetail {
   word_cells: { row: number; col: number }[][]
 }
 
-export interface ShuffleStatus {
+// Unified status shape for generation jobs (creation and shuffle both fill a
+// puzzle's grid in the background) — also what the per-puzzle status
+// endpoint returns, with status 'none' when the puzzle has no job history.
+export interface AdminJob {
+  job_id: string
+  kind: 'create' | 'shuffle' | ''
   status: 'none' | 'pending' | 'done' | 'error'
+  puzzle_id: number | null
   elapsed_seconds: number
+  theme: string
+  mega_machrozet: string
+  words: string[]
   puzzle?: LevelGridDetail
   detail?: string
 }
@@ -73,11 +82,19 @@ export const adminApi = {
   getLevelGrid: (id: number) =>
     request<LevelGridDetail>(`/api/admin/puzzles/${id}`),
 
+  // Creation is async: the server answers immediately with a background job
+  // (generation can take minutes) — watch it via getJobs; the finished level
+  // shows up in getLevels.
   createLevel: (data: LevelWordsData) =>
-    request<LevelGridDetail>('/api/admin/puzzles', {
+    request<AdminJob>('/api/admin/puzzles', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  getJobs: () => request<AdminJob[]>('/api/admin/jobs'),
+
+  dismissJob: (jobId: string) =>
+    request<void>(`/api/admin/jobs/${jobId}`, { method: 'DELETE' }),
 
   deleteLevel: (id: number) =>
     request<void>(`/api/admin/puzzles/${id}`, {
@@ -102,7 +119,7 @@ export const adminApi = {
   // (e.g. triggered from another tab, or before a page reload) instead of
   // kicking off a wasteful duplicate.
   triggerShuffle: (id: number) =>
-    request<ShuffleStatus>(`/api/admin/puzzles/${id}/shuffle`, {
+    request<AdminJob>(`/api/admin/puzzles/${id}/shuffle`, {
       method: 'POST',
     }),
 
@@ -110,5 +127,5 @@ export const adminApi = {
   // to poll an in-progress shuffle and to check on mount whether one is
   // already running (so progress survives navigating away and back).
   getShuffleStatus: (id: number) =>
-    request<ShuffleStatus>(`/api/admin/puzzles/${id}/shuffle-status`),
+    request<AdminJob>(`/api/admin/puzzles/${id}/shuffle-status`),
 }
