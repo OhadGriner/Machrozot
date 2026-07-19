@@ -21,6 +21,11 @@ services:
       - .env
     volumes:
       - ./backend:/app
+      # The bind mount above also exposes the host's macOS .venv at /app/.venv —
+      # this anonymous volume shadows it so the container keeps its own Linux
+      # venv, instead of host uv runs and container uv runs clobbering each
+      # other's packages (symptom: certifi/cacert.pem intermittently missing).
+      - /app/.venv
     depends_on:
       - db
 

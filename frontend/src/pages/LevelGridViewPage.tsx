@@ -223,7 +223,10 @@ export default function LevelGridViewPage() {
                     key={c}
                     data-row={r}
                     data-col={c}
-                    className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xl font-bold ${CELL_STYLE[visual]}`}
+                    // Must stay in sync with SelectionLine's CELL_SIZE (and the
+                    // game's Cell.tsx) — the connector lines are computed from
+                    // that fixed size, so a different cell size shifts them.
+                    className={`w-10 h-10 rounded-full border-2 flex items-center justify-center text-xl font-bold ${CELL_STYLE[visual]}`}
                   >
                     {letter}
                   </div>
