@@ -7,6 +7,7 @@ from app.services.grid_generator import (
     COLS,
     ROWS,
     GridGenerationError,
+    _enough_reachable_empty_cells,
     _find_traces,
     _has_ambiguous_trace,
     generate_grid,
@@ -378,3 +379,33 @@ def test_unique_path_is_not_ambiguous():
         grid[row][col] = letter
 
     assert not _has_ambiguous_trace(grid, "אבגד", route)
+
+
+def _empty_grid() -> list[list[str]]:
+    return [["" for _ in range(COLS)] for _ in range(ROWS)]
+
+
+def test_enough_reachable_empty_cells_open_board():
+    grid = _empty_grid()
+    grid[0][0] = "א"
+    # 47 empties remain, all connected.
+    assert _enough_reachable_empty_cells((0, 0), 47, grid)
+    assert not _enough_reachable_empty_cells((0, 0), 48, grid)
+
+
+def test_enough_reachable_empty_cells_walled_off_pocket():
+    grid = _empty_grid()
+    # Wall down column 1 seals column 0 into an 8-cell pocket.
+    for row in range(ROWS):
+        grid[row][1] = "ק"
+    grid[3][0] = "א"  # standing inside the pocket: 7 empties reachable
+    assert _enough_reachable_empty_cells((3, 0), 7, grid)
+    assert not _enough_reachable_empty_cells((3, 0), 8, grid)
+
+
+def test_enough_reachable_empty_cells_zero_needed_is_always_true():
+    grid = _empty_grid()
+    for row in range(ROWS):
+        for col in range(COLS):
+            grid[row][col] = "ק"
+    assert _enough_reachable_empty_cells((0, 0), 0, grid)

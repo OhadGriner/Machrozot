@@ -8,6 +8,7 @@ ROWS, COLS = 8, 6
 TOTAL_CELLS = ROWS * COLS
 MIN_MEGA_MACHROZET_LENGTH = min(ROWS, COLS)  # shortest possible span between opposite edges
 LONG_WORD_LENGTH = 8  # only bias growth for paths longer than this
+STEP_BUDGET = 150_000  # backtracking steps per attempt before restarting fresh — see _AttemptBudgetExceeded
 
 ALL_COORDS = [(row, col) for row in range(ROWS) for col in range(COLS)]
 
@@ -19,10 +20,22 @@ class GenerationState:
     grid: list[list[str]]
     mega_machrozet_route: list[Coord]
     word_routes: list[list[Coord]] = field(default_factory=list)
+    steps: int = 0
 
 
 class GridGenerationError(Exception):
     """Raised when no valid grid layout could be found for the given words."""
+
+
+class _AttemptBudgetExceeded(Exception):
+    """Raised mid-backtracking once an attempt has done more search work than
+    it's worth continuing — see `generate_grid`'s STEP_BUDGET. Runtime for
+    this backtracking search is heavy-tailed: most random layouts either
+    resolve quickly or fail fast, but occasionally one wanders into a huge,
+    mostly-doomed subtree and grinds for minutes. Capping the work per
+    attempt and restarting with fresh randomness (a standard restart
+    strategy for backtracking search) trades a few wasted cheap attempts for
+    never getting stuck in an expensive one."""
 
 
 def touches_opposite_edges(cell_a: Cell, cell_b: Cell) -> bool:
@@ -201,6 +214,30 @@ def _remaining_words_still_fit(free_cells: set[Coord], remaining_lengths: list[i
     return _can_partition_into_sizes(component_sizes, remaining_lengths)
 
 
+def _enough_reachable_empty_cells(start: Coord, needed: int, grid: list[list[str]]) -> bool:
+    """Are at least `needed` empty cells reachable (king-moves through empty
+    cells only) from `start`? A route with `needed` letters still to place
+    can't possibly finish without that many reachable empties, so checking
+    this after each step kills doomed branches at the first stranded cell
+    instead of after deep backtracking. Flood-fill with early exit."""
+    if needed <= 0:
+        return True
+    stack = [neighbor for neighbor in NEIGHBORS[start] if not grid[neighbor[0]][neighbor[1]]]
+    seen = set(stack)
+    if len(seen) >= needed:
+        return True
+    while stack:
+        current = stack.pop()
+        for neighbor in NEIGHBORS[current]:
+            if neighbor in seen or grid[neighbor[0]][neighbor[1]]:
+                continue
+            seen.add(neighbor)
+            if len(seen) >= needed:
+                return True
+            stack.append(neighbor)
+    return False
+
+
 def _cells_from_coords(coords: list[Coord]) -> list[Cell]:
     return [Cell(row=row, col=col) for row, col in coords]
 
@@ -281,6 +318,10 @@ def _place_route(
             in_progress_diagonals[block] = direction
 
     for location in locations:
+        state.steps += 1
+        if state.steps > STEP_BUDGET:
+            raise _AttemptBudgetExceeded
+
         if previous is not None and _has_committed_neighbor_with_letter(
             previous, letter, location, state.grid, ignore=route_so_far
         ):
@@ -299,6 +340,10 @@ def _place_route(
 
         if len(text) == 1:
             success = is_valid_finish is None or is_valid_finish(route)
+        elif not _enough_reachable_empty_cells(location, len(text) - 1, state.grid):
+            # Feasibility pruning: the rest of this word can't possibly fit in
+            # the empty cells reachable from here, so don't bother recursing.
+            success = False
         else:
             next_locations = _next_valid_locations(location, state.grid, use_warnsdorff)
             success = _place_route(
@@ -322,12 +367,21 @@ def _place_mega_machrozet(
     committed_successor: dict[Coord, Coord] | None = None,
     committed_diagonals: dict[Coord, str] | None = None,
 ) -> bool:
+    def is_valid_finish(route: list[Coord]) -> bool:
+        if not touches_opposite_edges(Cell(*route[0]), Cell(*route[-1])):
+            return False
+        # The mega machrozet's own letters alone can already form an alternate
+        # trace (repeated letter patterns curling back on themselves) — catch
+        # that here, while backtracking can still fix it, rather than after
+        # every word has been placed on top.
+        return not _has_ambiguous_trace(state.grid, mega_machrozet, route)
+
     return _place_route(
         state, state.mega_machrozet_route, mega_machrozet, locations,
         committed_successor if committed_successor is not None else {},
         committed_diagonals if committed_diagonals is not None else {},
         use_warnsdorff=False,
-        is_valid_finish=lambda route: touches_opposite_edges(Cell(*route[0]), Cell(*route[-1])),
+        is_valid_finish=is_valid_finish,
     )
 
 
@@ -339,8 +393,29 @@ def _place_word(
     committed_successor: dict[Coord, Coord],
     committed_diagonals: dict[Coord, str],
     remaining_lengths: list[int],
+    committed_answers: list[tuple[str, list[Coord]]],
 ) -> bool:
-    def fits_remaining_words(_route: list[Coord]) -> bool:
+    """`committed_answers` is every already-placed answer (mega machrozet +
+    earlier words) with its route. Checking path-uniqueness here — while this
+    word's placement is still a candidate — means an ambiguity is fixed by
+    backtracking just this word, instead of finishing the whole board only to
+    throw the entire layout away. Sound because letters are only ever added:
+    a trace that exists mid-layout still exists on the finished board."""
+
+    def is_valid_finish(candidate_route: list[Coord]) -> bool:
+        # Ambiguity checks first, connectivity last: profiling on a
+        # heavily letter-repeating word set showed the free-cells flood
+        # fill below costs ~4x an ambiguity check, and it's rejected by
+        # backtracking far more often than the fit check is — checking
+        # cheap-and-frequent before expensive-and-rare avoids paying for
+        # the flood fill on candidates that fail anyway.
+        if _has_ambiguous_trace(state.grid, word, candidate_route):
+            return False
+        if any(
+            _has_ambiguous_trace(state.grid, prev_word, prev_route)
+            for prev_word, prev_route in committed_answers
+        ):
+            return False
         free_cells = {coord for coord in ALL_COORDS if not state.grid[coord[0]][coord[1]]}
         return _remaining_words_still_fit(free_cells, remaining_lengths)
 
@@ -348,7 +423,7 @@ def _place_word(
         state, route, word, locations,
         committed_successor, committed_diagonals,
         use_warnsdorff=True,
-        is_valid_finish=fits_remaining_words,
+        is_valid_finish=is_valid_finish,
     )
 
 
@@ -451,41 +526,47 @@ def generate_grid(
         committed_successor: dict[Coord, Coord] = {}
         committed_diagonals: dict[Coord, str] = {}
 
-        mega_machrozet_start_candidates = _mega_machrozet_start_candidates(len(mega_machrozet), random)
-        if not _place_mega_machrozet(
-            state, mega_machrozet, mega_machrozet_start_candidates, committed_successor, committed_diagonals
-        ):
-            continue
-        _commit_path(state.mega_machrozet_route, mega_machrozet, state.grid, committed_diagonals, committed_successor)
-
-        placement_failed = False
-        for position, word_index in enumerate(order):
-            word = words[word_index]
-            free_cells = [coord for coord in ALL_COORDS if not state.grid[coord[0]][coord[1]]]
-            random.shuffle(free_cells)
-            remaining_lengths = [len(words[other_index]) for other_index in order[position + 1:]]
-            if not _place_word(
-                state, word, state.word_routes[word_index], free_cells,
-                committed_successor, committed_diagonals, remaining_lengths,
+        try:
+            mega_machrozet_start_candidates = _mega_machrozet_start_candidates(len(mega_machrozet), random)
+            if not _place_mega_machrozet(
+                state, mega_machrozet, mega_machrozet_start_candidates, committed_successor, committed_diagonals
             ):
-                placement_failed = True
-                break
-            _commit_path(
-                state.word_routes[word_index], word, state.grid, committed_diagonals, committed_successor
-            )
+                continue
+            _commit_path(state.mega_machrozet_route, mega_machrozet, state.grid, committed_diagonals, committed_successor)
+
+            placement_failed = False
+            committed_answers: list[tuple[str, list[Coord]]] = [
+                (mega_machrozet, state.mega_machrozet_route)
+            ]
+            for position, word_index in enumerate(order):
+                word = words[word_index]
+                free_cells = [coord for coord in ALL_COORDS if not state.grid[coord[0]][coord[1]]]
+                random.shuffle(free_cells)
+                remaining_lengths = [len(words[other_index]) for other_index in order[position + 1:]]
+                if not _place_word(
+                    state, word, state.word_routes[word_index], free_cells,
+                    committed_successor, committed_diagonals, remaining_lengths,
+                    committed_answers,
+                ):
+                    placement_failed = True
+                    break
+                _commit_path(
+                    state.word_routes[word_index], word, state.grid, committed_diagonals, committed_successor
+                )
+                committed_answers.append((word, state.word_routes[word_index]))
+        except _AttemptBudgetExceeded:
+            continue
 
         if placement_failed:
             continue
 
         # Global uniqueness: every answer word must have exactly one trace on
-        # the finished board. The step-level fork check above can't catch a
-        # full alternate path starting somewhere else entirely — and since the
-        # client validates by exact cell path, a player tracing such a
-        # duplicate would spell the word correctly yet be rejected.
-        all_routes = [(mega_machrozet, state.mega_machrozet_route)] + [
-            (words[i], state.word_routes[i]) for i in range(len(words))
-        ]
-        if any(_has_ambiguous_trace(state.grid, word, route) for word, route in all_routes):
+        # the finished board — the client validates by exact cell path, so a
+        # player tracing a duplicate would spell the word correctly yet be
+        # rejected. Each word's placement already verified this incrementally
+        # (see _place_word); this final pass is a cheap safety net so a bug in
+        # the incremental checks could never ship an ambiguous board.
+        if any(_has_ambiguous_trace(state.grid, word, route) for word, route in committed_answers):
             continue
 
         mega_machrozet_cells = _cells_from_coords(state.mega_machrozet_route)
